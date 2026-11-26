@@ -7,3 +7,7 @@ frontend/dist/
 *.vault
 *.db
 .env
+
+*.vault.pub
+~$*.docx
+Decisions.docx
