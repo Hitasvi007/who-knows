@@ -47,6 +47,9 @@ DEV_MODE = os.environ.get("WHOKNOWS_DEV") == "1"
 IDLE_LOCK_SECONDS = float(os.environ.get("WHOKNOWS_IDLE_LOCK_SECONDS", "300"))
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
+APP_ORIGINS = {"http://127.0.0.1:8000", "http://localhost:8000"}
+DEV_ORIGINS = {"http://127.0.0.1:5173", "http://localhost:5173"}
+
 ALLOWED_HOSTS = {
     "127.0.0.1:8000",
     "localhost:8000",
@@ -121,6 +124,11 @@ async def localhost_security_middleware(request: Request, call_next):
     # 2. Local Process / CSRF Defense: constant-time session check on every API call.
     # HttpOnly + SameSite=Strict cookie; the header is only honoured in dev mode.
     if request.url.path.startswith("/api/"):
+        # Browsers treat every localhost port as "same site", so SameSite alone would let a page
+        # on another port send bodiless POSTs (lock, tamper probes) with our cookie.
+        origin = request.headers.get("origin")
+        if origin is not None and origin not in APP_ORIGINS | (DEV_ORIGINS if DEV_MODE else set()):
+            return JSONResponse(status_code=403, content={"detail": f"Forbidden Origin '{origin}'."})
         provided = request.cookies.get(SESSION_COOKIE) or (
             request.headers.get("x-vault-token", "") if DEV_MODE else ""
         )
@@ -156,7 +164,7 @@ async def localhost_security_middleware(request: Request, call_next):
 if DEV_MODE:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_origins=sorted(DEV_ORIGINS),
         allow_credentials=True,
         allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "X-Vault-Token"],
