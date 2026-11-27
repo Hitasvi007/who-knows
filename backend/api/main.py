@@ -23,6 +23,7 @@ from backend.crypto.container import (
 )
 from backend.crypto.engine import DecryptionError
 from backend.crypto.pqc_share import HybridShareEngine
+from backend.crypto.timing import benchmark_unlock_timing
 from backend.crypto.rollback import (
     MLDSA65_SIG_SIZE,
     SIGNED_CONTAINER_SIZE,
@@ -481,23 +482,10 @@ def tamper_rollback() -> Dict[str, Any]:
         }
 
 
+class DuressTimingRequest(BaseModel):
+    trials: int = Field(default=30, ge=5, le=100)
+
+
 @app.post("/api/tamper/duress-timing")
-def tamper_duress_timing() -> Dict[str, Any]:
-    c = VaultContainer()
-    blob = c.build("real_pw", b"real", duress_password="decoy_pw", decoy_data=b"decoy")
-
-    t0 = time.perf_counter()
-    c.unlock("real_pw", blob)
-    real_ms = round((time.perf_counter() - t0) * 1000, 2)
-
-    t1 = time.perf_counter()
-    c.unlock("decoy_pw", blob)
-    decoy_ms = round((time.perf_counter() - t1) * 1000, 2)
-
-    ratio = round(decoy_ms / max(real_ms, 0.01), 2)
-    return {
-        "real_ms": real_ms,
-        "decoy_ms": decoy_ms,
-        "ratio": ratio,
-        "constant_time_pass": ratio < 1.8,
-    }
+def tamper_duress_timing(req: DuressTimingRequest = DuressTimingRequest()) -> Dict[str, Any]:
+    return {"target": "synthetic", **benchmark_unlock_timing(req.trials)}
