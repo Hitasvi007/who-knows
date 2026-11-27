@@ -1,4 +1,5 @@
 const API_BASE = "http://127.0.0.1:8000";
+const SESSION_TOKEN = import.meta.env.VITE_VAULT_TOKEN || "";
 
 export class ApiError extends Error {
   status: number;
@@ -10,10 +11,13 @@ export class ApiError extends Error {
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Vault-Token": SESSION_TOKEN,
+      ...(options?.headers || {}),
+    },
   });
-
   if (!res.ok) {
     let detail = res.statusText;
     try {

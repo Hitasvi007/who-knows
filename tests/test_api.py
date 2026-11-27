@@ -9,7 +9,7 @@ os.environ["TESTING"] = "1"
 import backend.api.main as api_main
 from backend.crypto.rollback import SIGNED_CONTAINER_SIZE, MemoryAnchor, RollbackGuard
 from backend.storage.vault_manager import VaultManager
-
+from backend.api.main import SESSION_TOKEN, app
 
 @pytest.fixture()
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
@@ -21,9 +21,10 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         guard=RollbackGuard(local_anchor=MemoryAnchor()),
     )
     monkeypatch.setattr(api_main, "vm", isolated_vm)
-    with TestClient(api_main.app) as test_client:
+    with TestClient(
+        api_main.app, headers={"X-Vault-Token": api_main.SESSION_TOKEN}
+    ) as test_client:
         yield test_client
-
 
 # --- 1. Vault Lifecycle & Status Codes ---
 
@@ -196,3 +197,20 @@ def test_tamper_lab_endpoints(client: TestClient):
 
     timing = client.post("/api/tamper/duress-timing").json()
     assert timing["constant_time_pass"] is True
+
+
+def test_dns_rebinding_rejected():
+    raw_client = TestClient(app)
+    res = raw_client.get(
+        "/api/vault/status",
+        headers={"Host": "evil.com:8000", "X-Vault-Token": SESSION_TOKEN},
+    )
+    assert res.status_code == 403
+    assert "DNS rebinding" in res.json()["detail"]
+
+
+def test_missing_session_token_rejected():
+    raw_client = TestClient(app)
+    res = raw_client.get("/api/vault/status")
+    assert res.status_code == 401
+    assert "X-Vault-Token" in res.json()["detail"]

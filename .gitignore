@@ -11,3 +11,5 @@ frontend/dist/
 *.vault.pub
 ~$*.docx
 Decisions.docx
+
+frontend/.env.local

@@ -1,3 +1,4 @@
+import secrets  
 import math
 import os
 import struct
@@ -33,6 +34,14 @@ from backend.storage.vault_manager import VaultLockedError, VaultManager
 
 
 VAULT_PATH = Path(os.environ.get("WHOKNOWS_VAULT_PATH", "whoknows.vault"))
+SESSION_TOKEN = os.environ.get("WHOKNOWS_SESSION_TOKEN") or secrets.token_hex(32)
+
+ALLOWED_HOSTS = {
+    "127.0.0.1:8000",
+    "localhost:8000",
+    "127.0.0.1",
+    "localhost",
+}
 
 vm = VaultManager(VAULT_PATH)
 pqc_engine = HybridShareEngine()
@@ -41,6 +50,10 @@ session_pqc_keypair = HybridKeypair.generate()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # In local dev, sync the ephemeral session token to Vite's gitignored .env.local
+    env_local = Path("frontend/.env.local")
+    if env_local.parent.exists() and not os.environ.get("PYTEST_CURRENT_TEST"):
+        env_local.write_text(f"VITE_VAULT_TOKEN={SESSION_TOKEN}\n", encoding="utf-8")
     yield
     # Wipe in-memory SQLite DB and keys on server shutdown
     vm.lock()
@@ -52,6 +65,35 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+@app.middleware("http")
+async def localhost_security_middleware(request: Request, call_next):
+    # 1. DNS Rebinding Defense: strictly validate Host header
+    host = (request.headers.get("host") or "").lower()
+    allowed = ALLOWED_HOSTS | ({"testserver"} if os.environ.get("PYTEST_CURRENT_TEST") else set())
+    if host not in allowed:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": f"Forbidden Host header '{host}' (DNS rebinding protection)."},
+        )
+
+    # Allow CORS preflight requests through to CORSMiddleware
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    # 2. Local Process / CSRF Defense: constant-time session token check
+    provided_token = request.headers.get("x-vault-token", "")
+    if not secrets.compare_digest(provided_token, SESSION_TOKEN):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Missing or invalid X-Vault-Token."},
+        )
+
+    return await call_next(request)
+
+
+# CORSMiddleware must be registered AFTER localhost_security_middleware
+# so it wraps outermost and attaches CORS headers even on 401/403 responses.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -61,10 +103,9 @@ app.add_middleware(
         "http://127.0.0.1:5173",
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Vault-Token"],
 )
-
 
 # --- Exception Handlers ---
 
