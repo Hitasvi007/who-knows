@@ -57,7 +57,7 @@ def test_vault_init_lock_unlock_and_wrong_password(client: TestClient):
     # Real password -> 200 OK
     real_resp = client.post("/api/vault/unlock", json={"password": "real_pw"})
     assert real_resp.status_code == 200
-    assert real_resp.json()["mode"] == "real"
+    assert api_main.vm.mode == "real"
 
 
 def test_vault_init_twice_returns_409_and_keeps_vault(client: TestClient):
@@ -124,16 +124,55 @@ def test_duress_mode_via_api_is_ephemeral(client: TestClient):
 
     unlock = client.post("/api/vault/unlock", json={"password": "decoy_pw"})
     assert unlock.status_code == 200
-    assert unlock.json()["mode"] == "decoy"
+    assert api_main.vm.mode == "decoy"
 
+    # No fixed decoy fingerprint: a randomized plausible set is generated
     entries = client.get("/api/entries").json()
-    assert len(entries) == 1
-    assert entries[0]["title"] == "Local Wi-Fi"
+    assert 3 <= len(entries) <= 7
+    assert "Local Wi-Fi" not in {e["title"] for e in entries}
 
-    # Adding an entry in Duress Mode must not increment seq_num on disk
+    # Adding an entry in Duress Mode advances the in-memory seq but never touches disk
+    before = api_main.vm.vault_path.read_bytes()
     add_resp = client.post("/api/entries", json={"title": "Fake", "password": "123"})
     assert add_resp.status_code == 201
-    assert add_resp.json()["seq_num"] == 1
+    assert add_resp.json()["seq_num"] == 2
+    assert api_main.vm.vault_path.read_bytes() == before
+
+
+def test_user_supplied_decoy_entries(client: TestClient):
+    client.post(
+        "/api/vault/init",
+        json={
+            "real_password": "real_pw",
+            "duress_password": "decoy_pw",
+            "decoy_entries": [{"title": "My Decoy", "username": "me", "password": "pw"}],
+        },
+    )
+    client.post("/api/vault/lock")
+    client.post("/api/vault/unlock", json={"password": "decoy_pw"})
+    assert [e["title"] for e in client.get("/api/entries").json()] == ["My Decoy"]
+
+
+def test_real_and_decoy_responses_are_indistinguishable(client: TestClient):
+    client.post("/api/vault/init", json={"real_password": "real_pw", "duress_password": "decoy_pw"})
+
+    def session(password: str):
+        client.post("/api/vault/lock")
+        unlock = client.post("/api/vault/unlock", json={"password": password}).json()
+        status = client.get("/api/vault/status").json()
+        seqs = [client.post("/api/entries", json={"title": f"t{i}"}).json() for i in range(2)]
+        return unlock, status, seqs, api_main.vm.mode
+
+    r_unlock, r_status, r_creates, r_mode = session("real_pw")
+    d_unlock, d_status, d_creates, d_mode = session("decoy_pw")
+    assert (r_mode, d_mode) == ("real", "decoy")
+
+    for real, decoy in [(r_unlock, d_unlock), (r_status, d_status), (r_creates[0], d_creates[0])]:
+        assert "mode" not in real and "mode" not in decoy
+        assert real.keys() == decoy.keys()
+    assert r_creates[0]["entry"].keys() == d_creates[0]["entry"].keys()
+    for creates in (r_creates, d_creates):
+        assert creates[1]["seq_num"] == creates[0]["seq_num"] + 1
 
 
 def test_concurrent_saves_do_not_fork_vault(client: TestClient):

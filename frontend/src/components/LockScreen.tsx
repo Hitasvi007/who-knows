@@ -7,7 +7,7 @@ import { PasswordStrengthMeter } from "./PasswordStrengthMeter";
 
 interface LockScreenProps {
   vaultExists: boolean;
-  onUnlocked: (mode: "real" | "decoy", seqNum: number, unlockMs?: number) => void;
+  onUnlocked: (seqNum: number, unlockMs?: number) => void;
 }
 
 export function LockScreen({ vaultExists, onUnlocked }: LockScreenProps) {
@@ -27,10 +27,10 @@ export function LockScreen({ vaultExists, onUnlocked }: LockScreenProps) {
     try {
       if (vaultExists) {
         const res = await api.unlock(password);
-        onUnlocked(res.mode, res.seq_num, res.unlock_ms);
+        onUnlocked(res.seq_num, res.unlock_ms);
       } else {
         const res = await api.init(password, duressPassword.trim() || undefined);
-        onUnlocked("real", res.seq_num);
+        onUnlocked(res.seq_num);
       }
     } catch (err) {
       setShakeKey((k) => k + 1);
@@ -148,7 +148,7 @@ export function LockScreen({ vaultExists, onUnlocked }: LockScreenProps) {
                   type="password"
                   value={duressPassword}
                   onChange={(e) => setDuressPassword(e.target.value)}
-                  placeholder="Opens ephemeral RAM-only decoy slot"
+                  placeholder="Optional secondary password"
                   className="w-full rounded-md border border-hairline bg-obsidian py-2 pr-3 pl-9 text-sm text-zinc-100 placeholder-zinc-600 focus:border-gold focus:outline-none"
                 />
               </div>

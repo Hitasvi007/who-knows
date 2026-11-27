@@ -3,7 +3,7 @@ import os
 import secrets
 import threading
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.mldsa import (
@@ -22,6 +22,38 @@ class VaultLockedError(Exception):
 
 class VaultExistsError(Exception):
     """Raised when create_vault would overwrite an existing vault or key file."""
+
+
+_rng = secrets.SystemRandom()
+
+# Decoy template pool: (title, url, notes). Usernames and passwords are randomized per vault,
+# and a random subset is picked, so no single fixed decoy fingerprint exists in the source.
+_DECOY_TEMPLATES = [
+    ("Home Wi-Fi", "", "Router in the hallway"),
+    ("Netflix", "https://netflix.com", ""),
+    ("Spotify", "https://spotify.com", "Family plan"),
+    ("Amazon", "https://amazon.com", ""),
+    ("Gmail", "https://mail.google.com", "Personal"),
+    ("Facebook", "https://facebook.com", ""),
+    ("Instagram", "https://instagram.com", ""),
+    ("Electric bill", "", "Account number on paper bill"),
+    ("Library card", "", ""),
+    ("Gym portal", "", "Membership renews in spring"),
+    ("Pizza place", "", "Loyalty account"),
+    ("Old laptop", "", "Login PIN"),
+]
+_DECOY_NAMES = ["alex", "sam", "jordan", "casey", "taylor", "morgan", "riley", "jamie", "chris", "pat"]
+_DECOY_WORDS = ["sunny", "maple", "tiger", "river", "coffee", "purple", "rocket", "garden", "winter", "lucky"]
+
+
+def _random_decoy_entries() -> List[Dict[str, str]]:
+    name = _rng.choice(_DECOY_NAMES)
+    entries = []
+    for title, url, notes in _rng.sample(_DECOY_TEMPLATES, _rng.randint(3, 7)):
+        user = _rng.choice([name, f"{name}{_rng.randint(1, 99)}", f"{name}.{_rng.randint(70, 99)}@mail.com"])
+        pw = f"{_rng.choice(_DECOY_WORDS).capitalize()}{_rng.choice(_DECOY_WORDS)}{_rng.randint(1, 999)}"
+        entries.append({"title": title, "username": user, "password": pw, "url": url, "notes": notes})
+    return entries
 
 
 def _synchronized(fn):
@@ -76,6 +108,7 @@ class VaultManager:
         self,
         real_password: str,
         duress_password: Optional[str] = None,
+        decoy_entries: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         """Initializes a new signed 68,909-byte .vault file and anchors seq 1."""
         if self.vault_path.exists() or self.pub_path.exists():
@@ -97,12 +130,8 @@ class VaultManager:
         decoy_bytes: Optional[bytes] = None
         if duress_password is not None:
             decoy_db = VaultDB()
-            decoy_db.add_entry(
-                title="Local Wi-Fi",
-                username="guest",
-                password="changeme123",
-                notes="Home guest network",
-            )
+            for entry in decoy_entries if decoy_entries is not None else _random_decoy_entries():
+                decoy_db.add_entry(**entry)
             decoy_bytes = decoy_db.export_bytes()
             decoy_db.close()
 
@@ -163,8 +192,10 @@ class VaultManager:
         if not self.is_unlocked or self.db is None or self._password is None:
             raise VaultLockedError("Vault must be unlocked before saving.")
 
-        # Duress sessions stay ephemeral in RAM to avoid corrupting Slot 1 on disk
+        # Duress sessions stay ephemeral in RAM to avoid corrupting Slot 1 on disk,
+        # but the seq counter still advances so the UI behaves exactly like real mode.
         if self.mode == "decoy":
+            self._seq_num += 1
             return self._seq_num
 
         sk_bytes = self.db.get_meta("mldsa_priv")

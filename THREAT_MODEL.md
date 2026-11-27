@@ -38,3 +38,10 @@ A single-user vault encrypted with 256-bit `XChaCha20-Poly1305` already retains 
 2. **Python Memory Hygiene:** Decrypted credentials live in an in-memory SQLite database so no plaintext is written to disk. However, Python strings are immutable, the garbage collector copies objects, and `mlock`/guaranteed zeroization is not enforced. **This project does not claim forensic RAM immunity.**
 3. **Active Multi-Session Coercion:** Duress mode is strictly ephemeral (changes in the decoy session are not persisted to disk so Slot 1 and `seq_num` remain untouched). An active coercer who adds a decoy entry, locks the vault, and unlocks it again will observe that the entry disappeared—exposing the duress password.
 4. **Same-Disk Trust Anchor:** In default local development, `.vault.pub` and the rollback anchor reside on the same filesystem as `.vault`. In a real deployment, the verification key and rollback state must be pinned in an OS keystore or hardware-backed storage.
+### Known Duress-Mode Tells
+
+The API never returns which slot was opened, decoy saves advance an in-memory sequence counter, and decoy entries are either user-supplied at init or drawn at random from a template pool (so no single fixed decoy fingerprint exists in the public source). The following tells remain:
+
+- **Shared header sequence number:** Slot 1 and Slot 2 share the plaintext header, so the on-disk `seq_num` reflects every *real* save. A decoy vault with a handful of entries sitting on a container at `seq_num` 400 suggests a second, busier slot exists.
+- **Multi-session coercion:** Decoy changes are RAM-only. An observer who adds an entry, locks, and unlocks again sees the entry (and the advanced sequence number) disappear. See item 3 above.
+- **Randomized-pool decoys:** If the user does not supply their own decoy entries, the generated set is plausible but generic. An observer who knows the template pool can recognize it.

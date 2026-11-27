@@ -34,7 +34,6 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 export interface VaultStatus {
   exists: boolean;
   unlocked: boolean;
-  mode: "real" | "decoy" | null;
   seq_num: number;
 }
 
@@ -88,7 +87,7 @@ export const api = {
       }),
     }),
   unlock: (password: string) =>
-    request<{ status: string; mode: "real" | "decoy"; seq_num: number; unlock_ms: number }>(
+    request<{ status: string; seq_num: number; unlock_ms: number }>(
       "/api/vault/unlock",
       { method: "POST", body: JSON.stringify({ password }) }
     ),

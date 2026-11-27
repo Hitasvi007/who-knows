@@ -31,9 +31,9 @@ export default function App() {
     return (
       <LockScreen
         vaultExists={status.exists}
-        onUnlocked={(mode, seqNum, ms) => {
+        onUnlocked={(seqNum, ms) => {
           setUnlockMs(ms);
-          setStatus({ exists: true, unlocked: true, mode, seq_num: seqNum });
+          setStatus({ exists: true, unlocked: true, seq_num: seqNum });
         }}
       />
     );

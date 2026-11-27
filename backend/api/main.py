@@ -161,11 +161,6 @@ def _flip_bit(data: bytes, idx: int) -> bytes:
 # --- Pydantic Schemas ---
 
 
-class VaultInitRequest(BaseModel):
-    real_password: str = Field(..., min_length=1)
-    duress_password: Optional[str] = None
-
-
 class VaultUnlockRequest(BaseModel):
     password: str = Field(..., min_length=1)
 
@@ -177,6 +172,13 @@ class EntryCreateRequest(BaseModel):
     url: str = ""
     totp_secret: str = ""
     notes: str = ""
+
+
+class VaultInitRequest(BaseModel):
+    real_password: str = Field(..., min_length=1)
+    duress_password: Optional[str] = None
+    # Optional user-chosen decoy entries; a randomized plausible set is generated otherwise.
+    decoy_entries: Optional[List[EntryCreateRequest]] = None
 
 
 class EntryUpdateRequest(BaseModel):
@@ -209,7 +211,6 @@ def vault_status() -> Dict[str, Any]:
     return {
         "exists": vm.vault_path.exists(),
         "unlocked": vm.is_unlocked,
-        "mode": vm.mode,
         "seq_num": vm._seq_num if vm.is_unlocked else 0,
     }
 
@@ -217,7 +218,8 @@ def vault_status() -> Dict[str, Any]:
 @app.post("/api/vault/init")
 def vault_init(req: VaultInitRequest) -> Dict[str, Any]:
     with vm.mutex:
-        vm.create_vault(req.real_password, duress_password=req.duress_password)
+        decoys = [e.model_dump() for e in req.decoy_entries] if req.decoy_entries is not None else None
+        vm.create_vault(req.real_password, duress_password=req.duress_password, decoy_entries=decoys)
         return {
             "status": "created",
             "seq_num": vm._seq_num,
@@ -228,11 +230,10 @@ def vault_init(req: VaultInitRequest) -> Dict[str, Any]:
 @app.post("/api/vault/unlock")
 def vault_unlock(req: VaultUnlockRequest) -> Dict[str, Any]:
     t0 = time.perf_counter()
-    mode = vm.unlock(req.password)
+    vm.unlock(req.password)  # mode stays server-side; never returned to the client
     elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
     return {
         "status": "unlocked",
-        "mode": mode,
         "seq_num": vm._seq_num,
         "unlock_ms": elapsed_ms,
     }
