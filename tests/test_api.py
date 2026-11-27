@@ -22,7 +22,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     )
     monkeypatch.setattr(api_main, "vm", isolated_vm)
     with TestClient(
-        api_main.app, headers={"X-Vault-Token": api_main.SESSION_TOKEN}
+        api_main.app, cookies={api_main.SESSION_COOKIE: api_main.SESSION_TOKEN}
     ) as test_client:
         yield test_client
 
@@ -367,4 +367,32 @@ def test_missing_session_token_rejected():
     raw_client = TestClient(app)
     res = raw_client.get("/api/vault/status")
     assert res.status_code == 401
-    assert "X-Vault-Token" in res.json()["detail"]
+    assert "session" in res.json()["detail"]
+
+
+def test_header_token_rejected_outside_dev_mode():
+    assert api_main.DEV_MODE is False
+    res = TestClient(app).get("/api/vault/status", headers={"X-Vault-Token": SESSION_TOKEN})
+    assert res.status_code == 401
+
+
+def test_header_token_accepted_in_dev_mode(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(api_main, "DEV_MODE", True)
+    res = TestClient(app).get("/api/vault/status", headers={"X-Vault-Token": SESSION_TOKEN})
+    assert res.status_code == 200
+
+
+def test_launch_code_exchanged_once_for_httponly_cookie(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(api_main, "LAUNCH_CODE", "test-launch-code")
+    raw = TestClient(app, follow_redirects=False)
+    assert raw.get("/?launch=wrong").status_code == 401
+
+    resp = raw.get("/?launch=test-launch-code")
+    assert resp.status_code == 303 and resp.headers["location"] == "/"
+    cookie = resp.headers["set-cookie"]
+    assert f"{api_main.SESSION_COOKIE}={SESSION_TOKEN}" in cookie
+    assert "HttpOnly" in cookie and "samesite=strict" in cookie.lower() and "Path=/" in cookie
+    assert raw.get("/api/vault/status").status_code == 200  # cookie now authenticates
+
+    # Single use
+    assert TestClient(app, follow_redirects=False).get("/?launch=test-launch-code").status_code == 401
