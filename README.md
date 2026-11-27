@@ -16,7 +16,7 @@ An offline, local-only password manager paired with an **Interactive Tamper Lab*
 Most portfolio password managers stop at basic CRUD over AES. `whoknows` is designed around **verifiable failure modes**:
 
 - **Interactive Tamper Lab:** Inspect the live 68,909-byte container layout, measure Slot 1 vs. Slot 2 Shannon entropy, flip any single bit across the container, and watch `XChaCha20-Poly1305`, `ML-DSA-65`, or `RollbackGuard` reject the attack in real time.
-- **Verify-Before-Decrypt:** Validates the `ML-DSA-65` signature and monotonic `seq_num` before invoking `Argon2id`, neutralizing cryptographic DoS and untrusted-input oracles.
+- **Verify-Before-Decrypt:** a tampered, replayed, or forward-dated vault file is rejected by the ML-DSA-65 signature and the rollback anchor before any Argon2id run.
 - **Fixed-Size Length-Hiding Container:** Every vault is padded to exactly `68,909` bytes (64B header + two 32 KB slots + 3,309B signature) to hide entry count and vault growth.
 - **Hybrid Post-Quantum Sharing:** Uses `X25519 + ML-KEM-768` hybrid key encapsulation for offline credential sharing—targeting the *harvest-now, decrypt-later* threat where PQ actually matters.
 - **Hardened Localhost Daemon:** Defends `127.0.0.1:8000` against DNS rebinding (`Host` header allowlist) and unauthorized callers (one-time launch link exchanged for a per-session 256-bit `HttpOnly; SameSite=Strict` cookie, verified in constant time).

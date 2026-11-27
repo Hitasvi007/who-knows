@@ -7,7 +7,7 @@
 | **KDF** | Argon2id | 64 MiB RAM, 3 iterations, 4 lanes, 16B salt → 32B KEK | GPU/ASIC-resistant master key derivation |
 | **AEAD** | XChaCha20-Poly1305 | 256-bit key, 192-bit (24B) nonce, 128-bit (16B) MAC | Envelope wrapping & vault slot encryption |
 | **PQ Key Exchange** | Hybrid X25519 + ML-KEM-768 | X25519 (32B) + ML-KEM-768 (1,184B pk / 1,088B ct) + HKDF-SHA256 | Zero-knowledge one-time credential sharing |
-| **PQ Signatures** | ML-DSA-65 (FIPS 204) | 1,952B pk, 3,309B signature | Tamper-evident hash chain & rollback detection |
+| **PQ Signatures** | ML-DSA-65 (FIPS 204) | 1,952B pk, 3,309B signature | Container signature; checked together with the rollback anchor (exact `seq_num` + state hash in `strict_local` mode) before Argon2id runs |
 | **State Hashing** | SHA-256 | 32B digest | Chaining vault states & external anchoring |
 
 ## 2. Binary Container Layout (`.vault`)
