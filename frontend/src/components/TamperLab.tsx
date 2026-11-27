@@ -169,7 +169,7 @@ export function TamperLab() {
               className="flex items-center justify-center border-r border-hairline bg-elevated/60 text-zinc-400"
               title="32 KB Slot 2 (Decoy)"
             >
-              SLOT 2 · IND-CPA PAD
+              SLOT 2 · DECOY / PADDING
             </div>
             <div
               style={{ width: "10%" }}
