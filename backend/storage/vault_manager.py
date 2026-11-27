@@ -2,6 +2,7 @@ import functools
 import os
 import secrets
 import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
@@ -84,6 +85,7 @@ class VaultManager:
         # Serializes unlock/save/lock; API callers also hold it across "mutate DB + save".
         self.mutex = threading.RLock()
         self.pqc_keypair: Optional[HybridKeypair] = None
+        self.last_activity = time.monotonic()
 
         # Active in-memory session state
         self.db: Optional[VaultDB] = None
@@ -96,6 +98,22 @@ class VaultManager:
     @property
     def is_unlocked(self) -> bool:
         return self.db is not None
+
+    def touch(self) -> None:
+        self.last_activity = time.monotonic()
+
+    def lock_if_idle(self, timeout_s: float) -> bool:
+        """Locks (wiping session secrets) if unlocked and idle for longer than timeout_s."""
+        # Non-blocking: called from the event loop, and a held mutex means the vault is in use
+        if not self.mutex.acquire(blocking=False):
+            return False
+        try:
+            if self.is_unlocked and time.monotonic() - self.last_activity > timeout_s:
+                self.lock()
+                return True
+            return False
+        finally:
+            self.mutex.release()
 
     def _atomic_write(self, path: Path, data: bytes) -> None:
         tmp_path = Path(f"{path}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
