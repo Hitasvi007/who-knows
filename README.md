@@ -25,7 +25,7 @@ Most portfolio password managers stop at basic CRUD over AES. `whoknows` is desi
 ## Architecture
 
 - **Backend (`backend/`):** Python 3.11 + FastAPI (`127.0.0.1:8000`), in-memory SQLite, atomic disk writes (`.tmp` → `fsync` → `replace`).
-- **Cryptography:** `argon2-cffi` (Argon2id), `cryptography` / `PyNaCl` (XChaCha20-Poly1305, X25519), `liboqs` (ML-DSA-65, ML-KEM-768).
+- **Cryptography:** `cryptography` >= 48 (Argon2id, X25519, ML-DSA-65, ML-KEM-768, HKDF-SHA256), `PyNaCl` (XChaCha20-Poly1305).
 - **Frontend (`frontend/`):** React, TypeScript, Vite, Tailwind CSS, Framer Motion (`127.0.0.1:5173`).
 
 For detailed trust boundaries and limitations (including Python RAM hygiene and ephemeral duress limits), read [`THREAT_MODEL.md`](./THREAT_MODEL.md).
@@ -39,7 +39,7 @@ For detailed trust boundaries and limitations (including Python RAM hygiene and 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 uvicorn backend.api.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 

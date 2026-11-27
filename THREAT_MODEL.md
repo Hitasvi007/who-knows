@@ -6,12 +6,12 @@
 
 | Layer | Primitive / Mechanism | Library | Purpose |
 | :--- | :--- | :--- | :--- |
-| **Key Derivation** | Argon2id | `argon2-cffi` | Memory-hard password stretching against offline GPU/ASIC brute force. |
-| **Vault Encryption** | XChaCha20-Poly1305 (256-bit) | `cryptography` / `PyNaCl` | Authenticated encryption (AEAD) with 192-bit nonces and header AAD binding. |
+| **Key Derivation** | Argon2id | `cryptography` | Memory-hard password stretching against offline GPU/ASIC brute force. |
+| **Vault Encryption** | XChaCha20-Poly1305 (256-bit) | `PyNaCl` | Authenticated encryption (AEAD) with 192-bit nonces and header AAD binding. |
 | **Length Hiding** | Fixed 68,909-byte container | Custom (`container.py`) | Dual 32 KB padded slots hide entry count and vault growth on disk. |
-| **Container Integrity** | ML-DSA-65 (FIPS 204) | `liboqs` | Verify-before-decrypt signature check to reject tampered containers before Argon2id runs. |
+| **Container Integrity** | ML-DSA-65 (FIPS 204) | `cryptography` | Verify-before-decrypt signature check to reject tampered containers before Argon2id runs. |
 | **Rollback Protection** | Monotonic `seq_num` + `prev_hash` | Custom (`rollback.py`) | Detects stale container replays against a locally pinned anchor. |
-| **Offline Sharing** | X25519 + ML-KEM-768 | `cryptography` + `liboqs` | Hybrid key encapsulation protecting shared secrets against *harvest-now, decrypt-later* attacks. |
+| **Offline Sharing** | X25519 + ML-KEM-768 | `cryptography` | Hybrid key encapsulation protecting shared secrets against *harvest-now, decrypt-later* attacks. |
 | **Local API Boundary** | `Host` check + `X-Vault-Token` + CORS | FastAPI | Blocks DNS rebinding and unauthorized local processes from calling `127.0.0.1:8000`. |
 
 ### Where Post-Quantum Cryptography Actually Applies
