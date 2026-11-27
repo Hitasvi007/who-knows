@@ -97,9 +97,13 @@ class RollbackGuard:
         self,
         local_anchor: Optional[StateAnchor] = None,
         remote_anchor: Optional[StateAnchor] = None,
+        strict_local: bool = True,
     ) -> None:
         self.local_anchor = local_anchor or KeyringAnchor()
         self.remote_anchor = remote_anchor
+        # Single-device mode: the file must match the anchor exactly (seq AND hash).
+        # A higher seq is only legitimate when another device can advance it (remote anchor / sync).
+        self.strict_local = strict_local
 
     @staticmethod
     def generate_signing_keypair() -> Tuple[MLDSA65PrivateKey, MLDSA65PublicKey]:
@@ -123,11 +127,17 @@ class RollbackGuard:
         return signed
 
     def _check_anchor(
-        self, anchor: StateAnchor, vault_id: str, seq_num: int, state_hash_hex: str, label: str
+        self,
+        anchor: StateAnchor,
+        vault_id: str,
+        seq_num: int,
+        state_hash_hex: str,
+        label: str,
+        exact: bool = False,
     ) -> None:
         expected = anchor.get_latest(vault_id)
         if expected is None:
-            return
+            return  # TOFU: no anchor yet, any validly signed file is accepted
         if seq_num < expected.seq_num:
             raise RollbackDetectedError(
                 f"{label} rollback detected: file seq {seq_num} is behind anchored seq {expected.seq_num}."
@@ -135,6 +145,11 @@ class RollbackGuard:
         if seq_num == expected.seq_num and state_hash_hex != expected.state_hash:
             raise RollbackDetectedError(
                 f"{label} fork/equivocation detected at seq {seq_num}: state hash mismatch."
+            )
+        if exact and seq_num != expected.seq_num:
+            raise RollbackDetectedError(
+                f"{label} anchor mismatch: file seq {seq_num} is ahead of anchored seq {expected.seq_num} "
+                "but no remote anchor is configured to vouch for it."
             )
 
     def verify_container(
@@ -161,7 +176,8 @@ class RollbackGuard:
         header = VaultHeader.from_bytes(unsigned[:HEADER_SIZE])
         state_hash_hex = state_hash.hex()
 
-        self._check_anchor(self.local_anchor, vault_id, header.seq_num, state_hash_hex, "Local")
+        exact = self.strict_local and self.remote_anchor is None
+        self._check_anchor(self.local_anchor, vault_id, header.seq_num, state_hash_hex, "Local", exact)
         if self.remote_anchor is not None:
             self._check_anchor(self.remote_anchor, vault_id, header.seq_num, state_hash_hex, "Remote")
 
