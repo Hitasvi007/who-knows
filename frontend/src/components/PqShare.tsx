@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { api, ApiError } from "../api";
 import { bundleFingerprint } from "../utils/fingerprint";
+import { copySecret } from "../utils/clipboard";
 
 function Fingerprint({ value, label }: { value: string | null; label: string }) {
   if (!value) return null;
@@ -60,9 +61,15 @@ export function PqShare() {
     bundleFingerprint(recipientBundle).then(setRecipientFp);
   }, [recipientBundle]);
 
-  function copy(key: string, value: string) {
+  async function copy(key: string, value: string) {
     if (!value) return;
-    navigator.clipboard.writeText(value);
+    try {
+      // Decrypted plaintext is a secret: same 30s auto-clear as vault passwords
+      if (key === "plain") await copySecret(value);
+      else await navigator.clipboard.writeText(value);
+    } catch {
+      return;
+    }
     setCopied(key);
     setTimeout(() => setCopied(null), 1500);
   }
