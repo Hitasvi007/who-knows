@@ -24,6 +24,31 @@ Most portfolio password managers stop at basic CRUD over AES. `whoknows` is desi
 
 ---
 
+## What the Tamper Lab Proves
+
+Each row is one attack, the layer that stops it, and the test that fails if that layer breaks. "Your vault copy" means the attack runs on an in-memory copy of the real `.vault` file. "Synthetic" means a throwaway lab container, used where the attack needs a password or file history.
+
+| Attack | Target | Region / offset | Layer that rejects it | Rejected before Argon2id? | Test |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 1-bit flip | Your vault copy | Header (offset 10) | ML-DSA-65 signature | Yes | `tests/test_api.py::test_tamper_bit_flip_real_vault_copy[10]` |
+| 1-bit flip | Your vault copy | Slot 1 (offset 250) | ML-DSA-65 signature | Yes | `tests/test_api.py::test_tamper_bit_flip_real_vault_copy[250]` |
+| 1-bit flip | Your vault copy | Slot 2 (offset 40,000) | ML-DSA-65 signature | Yes | `tests/test_api.py::test_tamper_bit_flip_real_vault_copy[40000]` |
+| 1-bit flip | Your vault copy | Signature (offset 68,000) | ML-DSA-65 signature | Yes | `tests/test_api.py::test_tamper_bit_flip_real_vault_copy[68000]` |
+| 1-bit flip | Synthetic | Header (offset 10, Argon2id salt) | XChaCha20-Poly1305 (wrong KEK, DEK unwrap fails) | No | `tests/test_api.py::test_tamper_bit_flip_every_region_synthetic[header]` |
+| 1-bit flip | Synthetic | Slot 1 (offset 250) | XChaCha20-Poly1305 (Poly1305 tag) | No | `tests/test_api.py::test_tamper_bit_flip_every_region_synthetic[slot1]` |
+| 1-bit flip | Synthetic | Slot 2 (offset 40,000) | ML-DSA-65 signature | Yes | `tests/test_api.py::test_tamper_bit_flip_every_region_synthetic[slot2]` |
+| 1-bit flip | Synthetic | Signature (offset 68,000) | ML-DSA-65 signature | Yes | `tests/test_api.py::test_tamper_bit_flip_every_region_synthetic[signature]` |
+| Header AAD mutation | Synthetic | `seq_num` field (bytes 22–29) | AEAD AAD binding (header bound to both slots) | No | `tests/test_adversarial.py::test_header_aad_tampering_rejected` |
+| Signature forgery | Your vault copy | Last signature byte | ML-DSA-65 signature | Yes | `tests/test_adversarial.py::test_mldsa_signature_tampering_rejected` |
+| Rollback replay | Synthetic | Whole file (older signed seq) | Rollback anchor (`seq_num` behind anchor) | Yes | `tests/test_adversarial.py::test_rollback_attack_detected` |
+| Fork / equivocation | Not in the Lab (test only) | Whole file (different signed state, same seq) | Rollback anchor (state-hash mismatch) | Yes | `tests/test_adversarial.py::test_fork_equivocation_attack_detected` |
+| Forward-dated file | Not in the Lab (test only) | Whole file (validly signed, seq ahead, not chained) | Rollback anchor, exact match in `strict_local` mode | Yes | `tests/test_adversarial.py::test_unanchored_forward_seq_rejected_in_strict_mode[True]` |
+| Duress timing probe | Synthetic | — | One Argon2id pass per unlock + dummy slot decrypt on wrong password | n/a (medians within 10%) | `tests/test_adversarial.py::test_duress_unlock_single_kdf_pass` |
+
+The Lab's one-click buttons (Header AAD, Forge Sig, Rollback, timing probe) are also exercised end to end through the API by `tests/test_api.py::test_tamper_lab_endpoints`.
+
+---
+
 ## Architecture
 
 - **Backend (`backend/`):** Python 3.11 + FastAPI (`127.0.0.1:8000`), in-memory SQLite, atomic disk writes (`.tmp` → `fsync` → `replace`).

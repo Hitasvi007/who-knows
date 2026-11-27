@@ -324,6 +324,7 @@ def test_tamper_lab_endpoints(client: TestClient):
         (40000, "ML-DSA-65 (FIPS 204)"),  # slot 2
         (68000, "ML-DSA-65 (FIPS 204)"),  # signature
     ],
+    ids=["header", "slot1", "slot2", "signature"],
 )
 def test_tamper_bit_flip_every_region_synthetic(client: TestClient, offset: int, layer: str):
     resp = client.post("/api/tamper/bit-flip", json={"offset": offset, "target": "synthetic"})
