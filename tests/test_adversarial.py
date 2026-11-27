@@ -136,7 +136,7 @@ def test_fork_equivocation_attack_detected(tmp_path: Path):
 
 @pytest.mark.parametrize("strict", [True, False])
 def test_unanchored_forward_seq_rejected_in_strict_mode(tmp_path: Path, strict: bool):
-    """A validly signed seq N+1 written without updating the anchor is rejected in strict mode."""
+    """A validly signed file two steps ahead of the anchor is rejected in strict mode."""
     vault_path = tmp_path / "forward.vault"
     anchor = MemoryAnchor()
     vm = VaultManager(vault_path, guard=RollbackGuard(local_anchor=anchor, strict_local=strict))
@@ -147,7 +147,8 @@ def test_unanchored_forward_seq_rejected_in_strict_mode(tmp_path: Path, strict: 
     other = VaultManager(vault_path, vault_id=vm.vault_id, guard=RollbackGuard(local_anchor=MemoryAnchor()))
     other.unlock("real_pw")
     other.db.add_entry("Injected", "x", "y")
-    assert other.save() == 2
+    other.save()
+    assert other.save() == 3  # skips seq 2, so it is not chained to the anchored state
     other.lock()
     assert anchor.get_latest(vm.vault_id).seq_num == 1
 
@@ -156,6 +157,27 @@ def test_unanchored_forward_seq_rejected_in_strict_mode(tmp_path: Path, strict: 
             vm.unlock("real_pw")
     else:
         assert vm.unlock("real_pw") == "real"
+
+
+def test_interrupted_anchor_write_does_not_lock_user_out(tmp_path: Path):
+    """File written but anchor update failed (crash / keyring error): next unlock recovers."""
+    anchor = MemoryAnchor()
+    guard = RollbackGuard(local_anchor=anchor)
+    vm = VaultManager(tmp_path / "crash.vault", guard=guard)
+    vm.create_vault("real_pw")
+    vm.db.add_entry("Bank", "u", "p")
+
+    real_commit = guard.commit_state
+    guard.commit_state = lambda *a: (_ for _ in ()).throw(OSError("keyring unavailable"))
+    with pytest.raises(OSError):
+        vm.save()
+    guard.commit_state = real_commit
+    assert anchor.get_latest(vm.vault_id).seq_num == 1
+
+    fresh = VaultManager(vm.vault_path, vault_id=vm.vault_id, guard=guard)
+    assert fresh.unlock("real_pw") == "real"
+    assert [e.title for e in fresh.db.list_entries()] == ["Bank"]
+    assert anchor.get_latest(vm.vault_id).seq_num == 2  # re-anchored
 
 
 # --- 3. Plausible Deniability & Constant-Time Duress ---
