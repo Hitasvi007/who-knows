@@ -20,6 +20,8 @@ import {
   type DuressTimingResult,
 } from "../api";
 
+const LAB_ERROR = "LAB ERROR";
+
 interface AttackLogItem extends TamperAttackResult {
   id: number;
   timestamp: string;
@@ -66,10 +68,11 @@ export function TamperLab() {
       const res = await fn();
       pushLog(res);
     } catch (err) {
+      // A failed request is a lab malfunction, never a defended attack.
       pushLog({
         attack: key,
-        caught: true,
-        layer: "HTTP Boundary",
+        caught: false,
+        layer: LAB_ERROR,
         error: err instanceof ApiError ? `${err.status}: ${err.message}` : "Request failed",
       });
     } finally {
@@ -86,6 +89,7 @@ export function TamperLab() {
       pushLog({
         attack: "duress-timing",
         caught: false,
+        layer: LAB_ERROR,
         error: err instanceof ApiError ? err.message : "Benchmark failed",
       });
     } finally {
@@ -436,7 +440,11 @@ export function TamperLab() {
                             : "bg-red-500/20 text-red-300"
                         }`}
                       >
-                        {item.caught ? "ATTACK CAUGHT" : "UNCAUGHT"}
+                        {item.caught
+                          ? "ATTACK CAUGHT"
+                          : item.layer === LAB_ERROR
+                            ? "LAB ERROR · NO RESULT"
+                            : "UNCAUGHT"}
                       </span>
                       {item.layer && (
                         <span className="rounded border border-hairline bg-surface px-1.5 py-0.5 text-zinc-300">

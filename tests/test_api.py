@@ -190,13 +190,33 @@ def test_tamper_lab_endpoints(client: TestClient):
     assert inspect["slot1_entropy"] > 7.9
     assert inspect["slot2_entropy"] > 7.9
 
-    assert client.post("/api/tamper/bit-flip", json={"offset": 250}).json()["caught"] is True
     assert client.post("/api/tamper/header-aad").json()["caught"] is True
     assert client.post("/api/tamper/signature").json()["caught"] is True
     assert client.post("/api/tamper/rollback").json()["caught"] is True
 
     timing = client.post("/api/tamper/duress-timing").json()
     assert timing["constant_time_pass"] is True
+
+
+@pytest.mark.parametrize(
+    "offset,layer",
+    [
+        (10, "XChaCha20-Poly1305"),  # header
+        (250, "XChaCha20-Poly1305"),  # slot 1
+        (40000, "ML-DSA-65 (FIPS 204)"),  # slot 2
+        (68000, "ML-DSA-65 (FIPS 204)"),  # signature
+    ],
+)
+def test_tamper_bit_flip_every_region(client: TestClient, offset: int, layer: str):
+    resp = client.post("/api/tamper/bit-flip", json={"offset": offset})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["caught"] is True
+    assert body["layer"] == layer
+
+
+def test_tamper_bit_flip_out_of_range(client: TestClient):
+    assert client.post("/api/tamper/bit-flip", json={"offset": SIGNED_CONTAINER_SIZE}).status_code == 422
 
 
 def test_dns_rebinding_rejected():

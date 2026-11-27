@@ -193,7 +193,7 @@ class PQCDecryptRequest(BaseModel):
 
 
 class BitFlipRequest(BaseModel):
-    offset: int = Field(default=HEADER_SIZE + 200, ge=0, lt=UNSIGNED_CONTAINER_SIZE)
+    offset: int = Field(default=HEADER_SIZE + 200, ge=0, lt=SIGNED_CONTAINER_SIZE)
 
 
 # --- 1. Vault Lifecycle (/api/vault) ---
@@ -330,12 +330,6 @@ def tamper_inspect() -> Dict[str, Any]:
 
 @app.post("/api/tamper/bit-flip")
 def tamper_bit_flip(req: BitFlipRequest) -> Dict[str, Any]:
-    if not (0 <= req.offset < SIGNED_CONTAINER_SIZE):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Offset must be between 0 and {SIGNED_CONTAINER_SIZE - 1}.",
-        )
-
     c = VaultContainer()
     blob = c.build("lab_pw", b"tamper_lab_secret")
 
@@ -356,10 +350,11 @@ def tamper_bit_flip(req: BitFlipRequest) -> Dict[str, Any]:
 
     # Slot 2 + Signature region: caught at container boundary by ML-DSA-65 before KDF
     guard = RollbackGuard(local_anchor=MemoryAnchor())
-    signed_blob = guard.sign(blob, vault_id="tamper_lab")
+    sk, pk = guard.generate_signing_keypair()
+    signed_blob = guard.sign_container(blob, sk)
     tampered_signed = _flip_bit(signed_blob, req.offset)
     try:
-        guard.verify(tampered_signed, vault_id="tamper_lab")
+        guard.verify_container(tampered_signed, pk, "tamper_lab")
         return {"attack": "ciphertext_bit_flip", "caught": False, "offset": req.offset}
     except SignatureError as exc:
         return {
