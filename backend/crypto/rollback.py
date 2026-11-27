@@ -134,6 +134,7 @@ class RollbackGuard:
         state_hash_hex: str,
         label: str,
         exact: bool = False,
+        prev_hash_hex: str = "",
     ) -> None:
         expected = anchor.get_latest(vault_id)
         if expected is None:
@@ -146,7 +147,10 @@ class RollbackGuard:
             raise RollbackDetectedError(
                 f"{label} fork/equivocation detected at seq {seq_num}: state hash mismatch."
             )
-        if exact and seq_num != expected.seq_num:
+        # One step ahead and chained to the anchored state: a save whose anchor update was
+        # interrupted (crash, keyring error). Forging this needs the signing key inside the vault.
+        resumed_save = seq_num == expected.seq_num + 1 and prev_hash_hex == expected.state_hash
+        if exact and seq_num != expected.seq_num and not resumed_save:
             raise RollbackDetectedError(
                 f"{label} anchor mismatch: file seq {seq_num} is ahead of anchored seq {expected.seq_num} "
                 "but no remote anchor is configured to vouch for it."
@@ -177,7 +181,9 @@ class RollbackGuard:
         state_hash_hex = state_hash.hex()
 
         exact = self.strict_local and self.remote_anchor is None
-        self._check_anchor(self.local_anchor, vault_id, header.seq_num, state_hash_hex, "Local", exact)
+        self._check_anchor(
+            self.local_anchor, vault_id, header.seq_num, state_hash_hex, "Local", exact, header.prev_hash.hex()
+        )
         if self.remote_anchor is not None:
             self._check_anchor(self.remote_anchor, vault_id, header.seq_num, state_hash_hex, "Remote")
 
