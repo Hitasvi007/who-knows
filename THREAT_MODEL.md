@@ -14,6 +14,11 @@
 | **Offline Sharing** | X25519 + ML-KEM-768 | `cryptography` | Hybrid key encapsulation protecting shared secrets against *harvest-now, decrypt-later* attacks. |
 | **Local API Boundary** | `Host` check + one-time launch code + `HttpOnly; SameSite=Strict` session cookie | FastAPI | Blocks DNS rebinding and unauthorized local processes from calling `127.0.0.1:8000`. |
 
+### What ML-DSA-65 Adds Over the Rollback Anchor
+The ML-DSA signature is groundwork for multi-device sync. In single-device mode the private signing key (inside the encrypted vault) and `.vault.pub` sit next to the vault, and the **anchor equality check is the primary pre-KDF gate**: with `strict_local` (the default) and no remote anchor, the file's `seq_num` *and* state hash must equal the anchored values exactly, so any tampered, replayed, or forward-dated file is rejected before Argon2id. A higher `seq_num` than the anchor is accepted only when a remote anchor is configured, the sync case where another device may legitimately have advanced the vault.
+
+**TOFU gap:** If the OS keyring entry is missing (first run, keyring wiped, or vault copied to a new machine), there is nothing to compare against, and any validly signed file is accepted and becomes the new anchor.
+
 ### Where Post-Quantum Cryptography Actually Applies
 A single-user vault encrypted with 256-bit `XChaCha20-Poly1305` already retains ~128 bits of effective security against Grover's algorithm. Post-quantum resistance is specifically critical in **Hybrid PQ Share (`X25519 + ML-KEM-768`)**, where an adversary can record classical key exchanges today and decrypt them once a cryptographically relevant quantum computer exists.
 
