@@ -134,6 +134,30 @@ def test_fork_equivocation_attack_detected(tmp_path: Path):
         vm.unlock("real_pw")
 
 
+@pytest.mark.parametrize("strict", [True, False])
+def test_unanchored_forward_seq_rejected_in_strict_mode(tmp_path: Path, strict: bool):
+    """A validly signed seq N+1 written without updating the anchor is rejected in strict mode."""
+    vault_path = tmp_path / "forward.vault"
+    anchor = MemoryAnchor()
+    vm = VaultManager(vault_path, guard=RollbackGuard(local_anchor=anchor, strict_local=strict))
+    vm.create_vault("real_pw")
+    vm.lock()
+
+    # Attacker (or another process) with the key advances the file using a separate anchor
+    other = VaultManager(vault_path, vault_id=vm.vault_id, guard=RollbackGuard(local_anchor=MemoryAnchor()))
+    other.unlock("real_pw")
+    other.db.add_entry("Injected", "x", "y")
+    assert other.save() == 2
+    other.lock()
+    assert anchor.get_latest(vm.vault_id).seq_num == 1
+
+    if strict:
+        with pytest.raises(RollbackDetectedError, match="anchor mismatch"):
+            vm.unlock("real_pw")
+    else:
+        assert vm.unlock("real_pw") == "real"
+
+
 # --- 3. Plausible Deniability & Constant-Time Duress ---
 
 
