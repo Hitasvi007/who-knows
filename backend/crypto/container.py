@@ -159,4 +159,9 @@ class VaultContainer:
         if decoy_dek is not None:
             return "decoy", header, decoy_dek, self._unpack_slot(decoy_dek, slot_2, header_bytes)
 
+        # Dummy slot decrypt so a wrong password costs the same as a real/decoy unlock
+        try:
+            self._unpack_slot(self.engine.generate_dek(), slot_1, header_bytes)
+        except DecryptionError:
+            pass
         raise DecryptionError("Incorrect password or tampered vault.")
