@@ -90,6 +90,16 @@ uvicorn backend.api.main:app --host 127.0.0.1 --port 8000 --reload
 
 Then run `npm run dev` in `frontend/` and open `http://127.0.0.1:5173`. In dev mode the daemon writes the session token to `frontend/.env.local` and accepts it as an `X-Vault-Token` header. Vite compiles it into the JavaScript it serves, so **any local process can read it**. Use dev mode for development only.
 
+### Recording the Demo
+
+```powershell
+python scripts/seed_demo_vault.py
+$env:WHOKNOWS_VAULT_PATH = "demo.vault"
+uvicorn backend.api.main:app --host 127.0.0.1 --port 8000
+```
+
+The script creates `demo.vault` (gitignored), with seven fictional entries and a decoy slot, and refuses to overwrite an existing file. Unlock with `demo-master-password-2026`, or `demo-duress-2026` for the decoy. It writes the vault's rollback anchor to your OS keyring like a normal vault.
+
 ### 3. Run Tests & Container Fuzzer
 
 ```powershell

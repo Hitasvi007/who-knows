@@ -14,3 +14,4 @@ Decisions.docx
 
 frontend/.env.local
 *.tsbuildinfo
+demo.vault*
