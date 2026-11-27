@@ -357,6 +357,24 @@ def test_weak_kdf_warning_when_testing_params_active():
     assert "weak Argon2id" in api_main.weak_kdf_warning()
 
 
+def test_idle_session_auto_locks(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    client.post("/api/vault/init", json={"real_password": "real_pw"})
+    assert client.get("/api/entries").status_code == 200
+
+    # Status polling is not activity; an idle vault locks on the next request
+    monkeypatch.setattr(api_main, "IDLE_LOCK_SECONDS", 0.05)
+    api_main.vm.last_activity -= 1
+    assert client.get("/api/vault/status").json()["unlocked"] is False
+    assert api_main.vm.db is None and api_main.vm.pqc_keypair is None
+    assert client.get("/api/entries").status_code == 423
+
+
+def test_lock_if_idle_keeps_active_session(client: TestClient):
+    client.post("/api/vault/init", json={"real_password": "real_pw"})
+    assert api_main.vm.lock_if_idle(300) is False
+    assert api_main.vm.is_unlocked
+
+
 def test_dns_rebinding_rejected():
     raw_client = TestClient(app)
     res = raw_client.get(
