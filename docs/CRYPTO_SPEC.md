@@ -33,3 +33,26 @@ Offset      Length    Field
 32,832      32,768 B  Slot 2 (Decoy Vault — identical layout; os.urandom if disabled)
 ------------------------------------------------------------------------
 65,600      3,309 B   ML-DSA-65 Signature over SHA-256(bytes[0:65600])
+## 3. Planned: v2 Header With Stored KDF Parameters (design note, not implemented)
+
+**Problem:** v1 never stores the Argon2id parameters. They are hardcoded in `CryptoEngine`, so they can never be raised without breaking every existing vault, and a vault built with `TESTING=1` parameters is indistinguishable on disk from a production one.
+
+**Proposal:** Bump `VERSION` to `2` and reuse the 2-byte reserved field plus 8 new bytes. The header grows from 64B to 72B, so the container grows to 68,917 bytes:
+
+```text
+Offset  Length  Field
+0       4 B     Magic b"WKN1"
+4       2 B     Version 0x0002
+6       16 B    Salt
+22      8 B     seq_num
+30      32 B    prev_hash
+62      4 B     Argon2id memory cost, KiB (uint32 BE)
+66      2 B     Argon2id iterations (uint16 BE)
+68      2 B     Argon2id lanes (uint16 BE)
+70      2 B     Reserved
+```
+
+- The parameters sit in the header, so they are covered by the AEAD AAD and the ML-DSA signature. An attacker can't downgrade them without detection.
+- On unlock, reject parameters below a floor (for example 19 MiB, t=2, the OWASP minimum) **before** running the KDF. This stops a forged header from forcing a trivially cheap KDF, or an enormous memory cost as a DoS.
+- On save, re-encrypt with the current default parameters, so vaults upgrade transparently after a successful unlock.
+- Readers keep v1 support (hardcoded 64 MiB / t=3 / p=4) and write v2 on the next save. This needs a one-time `seq_num` advance, which the anchor accepts normally.
