@@ -12,6 +12,7 @@ An offline, local-only password manager paired with an **Interactive Tamper Lab*
 ## Why This Exists
 
 Most portfolio password managers stop at basic CRUD over AES. `whoknows` is designed around **verifiable failure modes**:
+
 - **Interactive Tamper Lab:** Inspect the live 68,909-byte container layout, measure Slot 1 vs. Slot 2 Shannon entropy, flip any single bit across the container, and watch `XChaCha20-Poly1305`, `ML-DSA-65`, or `RollbackGuard` reject the attack in real time.
 - **Verify-Before-Decrypt:** Validates the `ML-DSA-65` signature and monotonic `seq_num` before invoking `Argon2id`, neutralizing cryptographic DoS and untrusted-input oracles.
 - **Fixed-Size Length-Hiding Container:** Every vault is padded to exactly `68,909` bytes (64B header + two 32 KB slots + 3,309B signature) to hide entry count and vault growth.
@@ -34,29 +35,28 @@ For detailed trust boundaries and limitations (including Python RAM hygiene and 
 ## Quickstart
 
 ### 1. Backend Daemon
+
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn backend.api.main:app --host 127.0.0.1 --port 8000 --reload
-On startup, the daemon generates an ephemeral 256-bit session token and writes it to frontend/.env.local (gitignored).
+```
+
+On startup, the daemon generates an ephemeral 256-bit session token and writes it to `frontend/.env.local` (gitignored).
 
 ### 2. Frontend UI
+
+```powershell
 cd frontend
 npm install
 npm run dev
+```
 
-Open http://127.0.0.1:5173.
+Open **`http://127.0.0.1:5173`**.
 
 ### 3. Run Tests & Container Fuzzer
-PowerShell
-pytest -v
-
----
-
-### Step 3: Commit & Push Commit 17
 
 ```powershell
-git add THREAT_MODEL.md README.md
-git commit -m "docs: add THREAT_MODEL.md and README.md with trust boundaries and limitations"
-git push
+pytest -v
+```
