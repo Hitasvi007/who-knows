@@ -4,6 +4,7 @@ import { LockScreen } from "./components/LockScreen";
 import { VaultWorkspace, type NavTab } from "./components/VaultWorkspace";
 import { TamperLab } from "./components/TamperLab";
 import { PqShare } from "./components/PqShare";
+import { clearClipboard } from "./utils/clipboard";
 
 export default function App() {
   const [status, setStatus] = useState<VaultStatus | null>(null);
@@ -56,6 +57,7 @@ export default function App() {
       onTabChange={setActiveTab}
       onSeqChange={(seq) => setStatus((prev) => (prev ? { ...prev, seq_num: seq } : prev))}
       onLock={async () => {
+        await clearClipboard();
         await api.lock();
         setUnlockMs(undefined);
         await refreshStatus();
