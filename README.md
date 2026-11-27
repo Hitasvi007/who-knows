@@ -1,5 +1,7 @@
 # whoknows
 
+[![CI](https://github.com/Hitasvi007/who-knows/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Hitasvi007/who-knows/actions/workflows/ci.yml)
+
 An offline, local-only password manager paired with an **Interactive Tamper Lab**—a built-in adversarial console that fires live cryptographic attacks (bit-flipping, header AAD mutation, ML-DSA-65 signature forgery, rollback replays, and timing probes). Bit-flip and signature attacks run against an in-memory copy of your real vault file; demos that need a password or file history (AEAD layer, header AAD, rollback, timing) use a synthetic lab container and are labelled as such.
 
 > **Status:** Unaudited security engineering project built for learning and adversarial testing. See [`THREAT_MODEL.md`](./THREAT_MODEL.md) for trust anchors, attacker boundaries, and known limitations.
