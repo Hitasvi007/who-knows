@@ -353,6 +353,10 @@ def test_tamper_bit_flip_out_of_range(client: TestClient):
     assert client.post("/api/tamper/bit-flip", json={"offset": SIGNED_CONTAINER_SIZE}).status_code == 422
 
 
+def test_weak_kdf_warning_when_testing_params_active():
+    assert "weak Argon2id" in api_main.weak_kdf_warning()
+
+
 def test_dns_rebinding_rejected():
     raw_client = TestClient(app)
     res = raw_client.get(
