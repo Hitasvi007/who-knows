@@ -18,7 +18,7 @@ Most portfolio password managers stop at basic CRUD over AES. `whoknows` is desi
 - **Fixed-Size Length-Hiding Container:** Every vault is padded to exactly `68,909` bytes (64B header + two 32 KB slots + 3,309B signature) to hide entry count and vault growth.
 - **Hybrid Post-Quantum Sharing:** Uses `X25519 + ML-KEM-768` hybrid key encapsulation for offline credential sharing—targeting the *harvest-now, decrypt-later* threat where PQ actually matters.
 - **Hardened Localhost Daemon:** Defends `127.0.0.1:8000` against DNS rebinding (`Host` header allowlist) and unauthorized callers (one-time launch link exchanged for a per-session 256-bit `HttpOnly; SameSite=Strict` cookie, verified in constant time).
-- **Fuzzed Binary Parser:** Property-based fuzzing with `hypothesis` across arbitrary, exact-size, and mutated byte streams with zero unhandled crashes.
+- **Fuzzed Parsers:** Property-based fuzzing with `hypothesis` of `VaultContainer.unlock` (arbitrary, exact-size, and single-byte-mutated Header/Slot 1 input), `RollbackGuard.verify_container` (arbitrary, exact-size, and mutated signed containers), `HybridShareEngine.decrypt_share` (arbitrary envelope shapes and field values), and `_parse_public_bundle`. Each is asserted to raise only its documented error types.
 
 ---
 
