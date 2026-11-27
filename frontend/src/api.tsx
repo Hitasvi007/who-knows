@@ -20,6 +20,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       ...(options?.headers || {}),
     },
   });
+  if (res.status === 423) {
+    // Vault locked server-side (e.g. idle auto-lock): let the app return to the lock screen
+    window.dispatchEvent(new Event("vault-locked"));
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try {

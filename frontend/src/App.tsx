@@ -27,6 +27,13 @@ export default function App() {
 
   useEffect(() => {
     refreshStatus();
+    const onLocked = () => {
+      clearClipboard();
+      setUnlockMs(undefined);
+      refreshStatus();
+    };
+    window.addEventListener("vault-locked", onLocked);
+    return () => window.removeEventListener("vault-locked", onLocked);
   }, []);
 
   if (!status) {
