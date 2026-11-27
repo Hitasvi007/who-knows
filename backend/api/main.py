@@ -1,4 +1,4 @@
-import secrets  
+import secrets
 import math
 import os
 import struct
@@ -11,7 +11,8 @@ from typing import Any, Dict, List, Literal, Optional
 from cryptography.hazmat.primitives.asymmetric.mldsa import MLDSA65PublicKey
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from backend.crypto.container import (
@@ -37,6 +38,12 @@ from backend.storage.vault_manager import VaultExistsError, VaultLockedError, Va
 
 VAULT_PATH = Path(os.environ.get("WHOKNOWS_VAULT_PATH", "whoknows.vault"))
 SESSION_TOKEN = os.environ.get("WHOKNOWS_SESSION_TOKEN") or secrets.token_hex(32)
+# One-time code printed at startup; exchanged once for an HttpOnly session cookie.
+LAUNCH_CODE: Optional[str] = secrets.token_urlsafe(24)
+SESSION_COOKIE = "wk_session"
+# Dev mode (Vite on :5173) accepts the X-Vault-Token header, which is compiled into the dev JS bundle.
+DEV_MODE = os.environ.get("WHOKNOWS_DEV") == "1"
+FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 ALLOWED_HOSTS = {
     "127.0.0.1:8000",
@@ -51,10 +58,12 @@ pqc_engine = HybridShareEngine()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # In local dev, sync the ephemeral session token to Vite's gitignored .env.local
-    env_local = Path("frontend/.env.local")
-    if env_local.parent.exists() and not os.environ.get("PYTEST_CURRENT_TEST"):
-        env_local.write_text(f"VITE_VAULT_TOKEN={SESSION_TOKEN}\n", encoding="utf-8")
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        print(f"\n  whoknows: open http://127.0.0.1:8000/?launch={LAUNCH_CODE}  (one-time link)\n", flush=True)
+        if DEV_MODE:
+            # Dev only: sync the session token to Vite's gitignored .env.local (exposed to local processes)
+            Path("frontend/.env.local").write_text(f"VITE_VAULT_TOKEN={SESSION_TOKEN}\n", encoding="utf-8")
+            print("  whoknows: WHOKNOWS_DEV=1, the session token is exposed via the Vite dev server.\n", flush=True)
     yield
     # Wipe in-memory SQLite DB and keys on server shutdown
     vm.lock()
@@ -82,31 +91,44 @@ async def localhost_security_middleware(request: Request, call_next):
     if request.method == "OPTIONS":
         return await call_next(request)
 
-    # 2. Local Process / CSRF Defense: constant-time session token check
-    provided_token = request.headers.get("x-vault-token", "")
-    if not secrets.compare_digest(provided_token, SESSION_TOKEN):
-        return JSONResponse(
-            status_code=401,
-            content={"detail": "Missing or invalid X-Vault-Token."},
+    # 2. Local Process / CSRF Defense: constant-time session check on every API call.
+    # HttpOnly + SameSite=Strict cookie; the header is only honoured in dev mode.
+    if request.url.path.startswith("/api/"):
+        provided = request.cookies.get(SESSION_COOKIE) or (
+            request.headers.get("x-vault-token", "") if DEV_MODE else ""
         )
+        if not secrets.compare_digest(provided, SESSION_TOKEN):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Missing or invalid session. Open the launch URL printed by the daemon."},
+            )
+        return await call_next(request)
 
-    return await call_next(request)
+    # 3. One-time launch code -> session cookie, then strip the code from the URL
+    code = request.query_params.get("launch")
+    if code is not None:
+        global LAUNCH_CODE
+        if LAUNCH_CODE is None or not secrets.compare_digest(code, LAUNCH_CODE):
+            return JSONResponse(status_code=401, content={"detail": "Launch code invalid or already used."})
+        LAUNCH_CODE = None
+        resp = RedirectResponse("/", status_code=303)
+        resp.set_cookie(SESSION_COOKIE, SESSION_TOKEN, httponly=True, samesite="strict", path="/")
+        return resp
+
+    return await call_next(request)  # static UI files hold no secrets
 
 
+# CORS is only needed for the Vite dev server; the production UI is same-origin.
 # CORSMiddleware must be registered AFTER localhost_security_middleware
 # so it wraps outermost and attaches CORS headers even on 401/403 responses.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
-    ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "X-Vault-Token"],
-)
+if DEV_MODE:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "X-Vault-Token"],
+    )
 
 # --- Exception Handlers ---
 
@@ -489,3 +511,8 @@ class DuressTimingRequest(BaseModel):
 @app.post("/api/tamper/duress-timing")
 def tamper_duress_timing(req: DuressTimingRequest = DuressTimingRequest()) -> Dict[str, Any]:
     return {"target": "synthetic", **benchmark_unlock_timing(req.trials)}
+
+
+# Built frontend served same-origin. Mounted last so /api routes take precedence.
+if FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="ui")
