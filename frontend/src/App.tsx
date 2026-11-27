@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type VaultStatus } from "./api";
+import { api, ApiError, type VaultStatus } from "./api";
 import { LockScreen } from "./components/LockScreen";
 import { VaultWorkspace, type NavTab } from "./components/VaultWorkspace";
 import { TamperLab } from "./components/TamperLab";
@@ -7,12 +7,21 @@ import { PqShare } from "./components/PqShare";
 
 export default function App() {
   const [status, setStatus] = useState<VaultStatus | null>(null);
+  const [connectError, setConnectError] = useState<string | null>(null);
   const [unlockMs, setUnlockMs] = useState<number | undefined>();
   const [activeTab, setActiveTab] = useState<NavTab>("vault");
 
   async function refreshStatus() {
-    const s = await api.status();
-    setStatus(s);
+    try {
+      setStatus(await api.status());
+      setConnectError(null);
+    } catch (err) {
+      setConnectError(
+        err instanceof ApiError && err.status === 401
+          ? "No session. Open the one-time launch link printed by the whoknows daemon."
+          : "Cannot reach the local vault daemon."
+      );
+    }
   }
 
   useEffect(() => {
@@ -22,7 +31,7 @@ export default function App() {
   if (!status) {
     return (
       <div className="flex h-screen items-center justify-center bg-obsidian font-mono text-xs text-zinc-500">
-        Connecting to local vault daemon…
+        {connectError ?? "Connecting to local vault daemon…"}
       </div>
     );
   }

@@ -1,5 +1,7 @@
-const API_BASE = "http://127.0.0.1:8000";
-const SESSION_TOKEN = import.meta.env.VITE_VAULT_TOKEN || "";
+// Production: UI is served by the daemon, authenticated by an HttpOnly session cookie.
+// Dev (WHOKNOWS_DEV=1 + Vite): cross-origin calls with the token from .env.local.
+const API_BASE = import.meta.env.DEV ? "http://127.0.0.1:8000" : "";
+const DEV_TOKEN = import.meta.env.DEV ? import.meta.env.VITE_VAULT_TOKEN || "" : "";
 
 export class ApiError extends Error {
   status: number;
@@ -14,7 +16,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      "X-Vault-Token": SESSION_TOKEN,
+      ...(DEV_TOKEN ? { "X-Vault-Token": DEV_TOKEN } : {}),
       ...(options?.headers || {}),
     },
   });
