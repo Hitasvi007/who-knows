@@ -33,6 +33,7 @@ export function TamperLab() {
   const [loadingInspect, setLoadingInspect] = useState(true);
 
   const [offset, setOffset] = useState(264);
+  const [flipTarget, setFlipTarget] = useState<"vault" | "synthetic">("vault");
   const [runningAttack, setRunningAttack] = useState<string | null>(null);
   const [logs, setLogs] = useState<AttackLogItem[]>([]);
 
@@ -118,7 +119,9 @@ export function TamperLab() {
             Interactive Tamper Lab
           </h1>
           <p className="font-mono text-xs text-zinc-500">
-            Execute live cryptographic attacks against an in-memory clone of your vault container.
+            Bit-flip and signature attacks run on an in-memory copy of your vault file (never written
+            to disk). AEAD, header, rollback and timing demos need a password or file history, so they
+            use a synthetic lab container.
           </p>
         </div>
         <button
@@ -249,6 +252,29 @@ export function TamperLab() {
               </span>
             </div>
 
+            <div className="flex gap-2 font-mono text-[10px]">
+              {(
+                [
+                  ["vault", "Your vault copy · ML-DSA-65 gate"],
+                  ["synthetic", "Synthetic container · AEAD layer"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setFlipTarget(value)}
+                  aria-pressed={flipTarget === value}
+                  className={`flex-1 rounded border px-2 py-1 transition ${
+                    flipTarget === value
+                      ? "border-gold/50 bg-gold-dim text-gold"
+                      : "border-hairline text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
             <div className="space-y-2">
               <div className="flex items-center justify-between font-mono text-[11px] text-zinc-400">
                 <span>Byte Offset</span>
@@ -274,7 +300,7 @@ export function TamperLab() {
             </div>
 
             <button
-              onClick={() => fireAttack("bit-flip", () => api.tamperBitFlip(offset))}
+              onClick={() => fireAttack("bit-flip", () => api.tamperBitFlip(offset, flipTarget))}
               disabled={runningAttack !== null}
               className="flex w-full items-center justify-center gap-2 rounded-md bg-gold px-3 py-2 text-xs font-semibold text-obsidian transition hover:bg-gold-bright disabled:opacity-50"
             >
@@ -449,6 +475,11 @@ export function TamperLab() {
                       {item.layer && (
                         <span className="rounded border border-hairline bg-surface px-1.5 py-0.5 text-zinc-300">
                           LAYER: {item.layer}
+                        </span>
+                      )}
+                      {item.target && (
+                        <span className="rounded border border-hairline bg-surface px-1.5 py-0.5 text-zinc-400">
+                          {item.target === "vault" ? "TARGET: YOUR VAULT (COPY)" : "TARGET: SYNTHETIC"}
                         </span>
                       )}
                       {item.rejected_before_kdf && (

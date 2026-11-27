@@ -324,12 +324,28 @@ def test_tamper_lab_endpoints(client: TestClient):
         (68000, "ML-DSA-65 (FIPS 204)"),  # signature
     ],
 )
-def test_tamper_bit_flip_every_region(client: TestClient, offset: int, layer: str):
-    resp = client.post("/api/tamper/bit-flip", json={"offset": offset})
+def test_tamper_bit_flip_every_region_synthetic(client: TestClient, offset: int, layer: str):
+    resp = client.post("/api/tamper/bit-flip", json={"offset": offset, "target": "synthetic"})
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["caught"] is True
     assert body["layer"] == layer
+    assert body["target"] == "synthetic"
+
+
+@pytest.mark.parametrize("offset", [10, 250, 40000, 68000])
+def test_tamper_bit_flip_real_vault_copy(client: TestClient, offset: int):
+    client.post("/api/vault/init", json={"real_password": "real_pw", "duress_password": "decoy_pw"})
+    before = api_main.vm.vault_path.read_bytes()
+    body = client.post("/api/tamper/bit-flip", json={"offset": offset}).json()
+    assert body["caught"] is True and body["target"] == "vault"
+    assert body["layer"] == "ML-DSA-65 (FIPS 204)" and body["rejected_before_kdf"] is True
+    assert api_main.vm.vault_path.read_bytes() == before  # never written to disk
+
+
+def test_tamper_real_vault_requires_vault(client: TestClient):
+    assert client.post("/api/tamper/bit-flip", json={"offset": 10}).status_code == 404
+    assert client.post("/api/tamper/signature").status_code == 404
 
 
 def test_tamper_bit_flip_out_of_range(client: TestClient):

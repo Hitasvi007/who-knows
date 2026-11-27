@@ -65,6 +65,7 @@ export interface TamperAttackResult {
   layer?: string;
   offset?: number;
   rejected_before_kdf?: boolean;
+  target?: "vault" | "synthetic";
   error?: string;
 }
 
@@ -127,10 +128,10 @@ export const api = {
 
   // Interactive Tamper Lab
   tamperInspect: () => request<TamperInspectResult>("/api/tamper/inspect"),
-  tamperBitFlip: (offset = 264) =>
+  tamperBitFlip: (offset = 264, target: "vault" | "synthetic" = "vault") =>
     request<TamperAttackResult>("/api/tamper/bit-flip", {
       method: "POST",
-      body: JSON.stringify({ offset }),
+      body: JSON.stringify({ offset, target }),
     }),
   tamperHeaderAad: () =>
     request<TamperAttackResult>("/api/tamper/header-aad", { method: "POST" }),

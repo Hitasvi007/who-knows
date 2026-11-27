@@ -6,8 +6,9 @@ import time
 from collections import Counter
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
+from cryptography.hazmat.primitives.asymmetric.mldsa import MLDSA65PublicKey
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -200,6 +201,9 @@ class PQCDecryptRequest(BaseModel):
 
 class BitFlipRequest(BaseModel):
     offset: int = Field(default=HEADER_SIZE + 200, ge=0, lt=SIGNED_CONTAINER_SIZE)
+    # "vault": in-memory copy of the real vault file (rejected by ML-DSA-65 before any KDF).
+    # "synthetic": throwaway lab container, so header/Slot 1 flips reach the AEAD layer.
+    target: Literal["vault", "synthetic"] = "vault"
 
 
 # --- 1. Vault Lifecycle (/api/vault) ---
@@ -349,8 +353,43 @@ def tamper_inspect() -> Dict[str, Any]:
         "sig_bytes": MLDSA65_SIG_SIZE,
     }
 
+def _real_vault_copy() -> tuple[bytes, MLDSA65PublicKey, RollbackGuard]:
+    """Reads the real vault into memory with a guard whose anchor mirrors the real one. Never writes."""
+    if not vm.vault_path.exists() or not vm.pub_path.exists():
+        raise HTTPException(status_code=404, detail="No vault file on disk yet.")
+    signed = vm.vault_path.read_bytes()
+    verify_key = MLDSA65PublicKey.from_public_bytes(vm.pub_path.read_bytes())
+    anchor = MemoryAnchor()
+    latest = vm.guard.local_anchor.get_latest(vm.vault_id)
+    if latest is not None:
+        anchor.set_latest(vm.vault_id, latest)
+    return signed, verify_key, RollbackGuard(local_anchor=anchor)
+
+
+def _verify_tampered_vault(attack: str, tampered: bytes, verify_key, guard: RollbackGuard, **extra) -> Dict[str, Any]:
+    try:
+        guard.verify_container(tampered, verify_key, vm.vault_id)
+        return {"attack": attack, "caught": False, "target": "vault", **extra}
+    except SignatureError as exc:
+        return {
+            "attack": attack,
+            "caught": True,
+            "layer": "ML-DSA-65 (FIPS 204)",
+            "rejected_before_kdf": True,
+            "target": "vault",
+            "error": str(exc),
+            **extra,
+        }
+
+
 @app.post("/api/tamper/bit-flip")
 def tamper_bit_flip(req: BitFlipRequest) -> Dict[str, Any]:
+    if req.target == "vault":
+        signed, verify_key, guard = _real_vault_copy()
+        return _verify_tampered_vault(
+            "ciphertext_bit_flip", _flip_bit(signed, req.offset), verify_key, guard, offset=req.offset
+        )
+
     c = VaultContainer()
     blob = c.build("lab_pw", b"tamper_lab_secret")
 
@@ -359,11 +398,12 @@ def tamper_bit_flip(req: BitFlipRequest) -> Dict[str, Any]:
         tampered = _flip_bit(blob, req.offset)
         try:
             c.unlock("lab_pw", tampered)
-            return {"attack": "ciphertext_bit_flip", "caught": False, "offset": req.offset}
+            return {"attack": "ciphertext_bit_flip", "caught": False, "target": "synthetic", "offset": req.offset}
         except DecryptionError as exc:
             return {
                 "attack": "ciphertext_bit_flip",
                 "caught": True,
+                "target": "synthetic",
                 "layer": "XChaCha20-Poly1305",
                 "offset": req.offset,
                 "error": str(exc),
@@ -376,11 +416,12 @@ def tamper_bit_flip(req: BitFlipRequest) -> Dict[str, Any]:
     tampered_signed = _flip_bit(signed_blob, req.offset)
     try:
         guard.verify_container(tampered_signed, pk, "tamper_lab")
-        return {"attack": "ciphertext_bit_flip", "caught": False, "offset": req.offset}
+        return {"attack": "ciphertext_bit_flip", "caught": False, "target": "synthetic", "offset": req.offset}
     except SignatureError as exc:
         return {
             "attack": "ciphertext_bit_flip",
             "caught": True,
+            "target": "synthetic",
             "layer": "ML-DSA-65 (FIPS 204)",
             "rejected_before_kdf": True,
             "offset": req.offset,
@@ -396,11 +437,12 @@ def tamper_header_aad() -> Dict[str, Any]:
     buf[22:30] = struct.pack(">Q", 99)
     try:
         c.unlock("lab_pw", bytes(buf))
-        return {"attack": "header_aad_tamper", "caught": False}
+        return {"attack": "header_aad_tamper", "caught": False, "target": "synthetic"}
     except DecryptionError as exc:
         return {
             "attack": "header_aad_tamper",
             "caught": True,
+            "target": "synthetic",
             "layer": "AEAD AAD Binding",
             "error": str(exc),
         }
@@ -408,22 +450,10 @@ def tamper_header_aad() -> Dict[str, Any]:
 
 @app.post("/api/tamper/signature")
 def tamper_signature() -> Dict[str, Any]:
-    c = VaultContainer()
-    g = RollbackGuard(local_anchor=MemoryAnchor())
-    sk, pk = g.generate_signing_keypair()
-    signed = g.sign_container(c.build("lab_pw", b"lab_secret"), sk)
-    tampered = _flip_bit(signed, SIGNED_CONTAINER_SIZE - 1)
-    try:
-        g.verify_container(tampered, pk, "lab_vault")
-        return {"attack": "mldsa_sig_forge", "caught": False}
-    except SignatureError as exc:
-        return {
-            "attack": "mldsa_sig_forge",
-            "caught": True,
-            "layer": "ML-DSA-65 (FIPS 204)",
-            "rejected_before_kdf": True,
-            "error": str(exc),
-        }
+    signed, verify_key, guard = _real_vault_copy()
+    return _verify_tampered_vault(
+        "mldsa_sig_forge", _flip_bit(signed, SIGNED_CONTAINER_SIZE - 1), verify_key, guard
+    )
 
 
 @app.post("/api/tamper/rollback")
@@ -440,11 +470,12 @@ def tamper_rollback() -> Dict[str, Any]:
 
     try:
         g.verify_container(v1, pk, "lab_vault")
-        return {"attack": "rollback_replay", "caught": False}
+        return {"attack": "rollback_replay", "caught": False, "target": "synthetic"}
     except RollbackDetectedError as exc:
         return {
             "attack": "rollback_replay",
             "caught": True,
+            "target": "synthetic",
             "layer": "RollbackGuard",
             "error": str(exc),
         }
