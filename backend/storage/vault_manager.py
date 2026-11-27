@@ -48,13 +48,27 @@ _DECOY_NAMES = ["alex", "sam", "jordan", "casey", "taylor", "morgan", "riley", "
 _DECOY_WORDS = ["sunny", "maple", "tiger", "river", "coffee", "purple", "rocket", "garden", "winter", "lucky"]
 
 
-def _random_decoy_entries() -> List[Dict[str, str]]:
+def _random_decoy_entries() -> List[Dict[str, Any]]:
     name = _rng.choice(_DECOY_NAMES)
+    now = int(time.time())
     entries = []
     for title, url, notes in _rng.sample(_DECOY_TEMPLATES, _rng.randint(3, 7)):
         user = _rng.choice([name, f"{name}{_rng.randint(1, 99)}", f"{name}.{_rng.randint(70, 99)}@mail.com"])
         pw = f"{_rng.choice(_DECOY_WORDS).capitalize()}{_rng.choice(_DECOY_WORDS)}{_rng.randint(1, 999)}"
-        entries.append({"title": title, "username": user, "password": pw, "url": url, "notes": notes})
+        # Spread timestamps over the past ~2 years so the set doesn't share the vault-creation second
+        created = now - _rng.randint(30 * 86400, 700 * 86400)
+        updated = _rng.randint(created, now)
+        entries.append(
+            {
+                "title": title,
+                "username": user,
+                "password": pw,
+                "url": url,
+                "notes": notes,
+                "created_at": created,
+                "updated_at": updated,
+            }
+        )
     return entries
 
 

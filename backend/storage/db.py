@@ -81,8 +81,12 @@ class VaultDB:
         url: str = "",
         totp_secret: str = "",
         notes: str = "",
+        created_at: Optional[int] = None,
+        updated_at: Optional[int] = None,
     ) -> VaultEntry:
         now = int(time.time())
+        created_at = now if created_at is None else created_at
+        updated_at = now if updated_at is None else updated_at
         entry = VaultEntry(
             id=str(uuid.uuid4()),
             title=title,
@@ -91,8 +95,8 @@ class VaultDB:
             url=url,
             totp_secret=totp_secret,
             notes=notes,
-            created_at=now,
-            updated_at=now,
+            created_at=created_at,
+            updated_at=updated_at,
         )
         self.conn.execute(
             """

@@ -51,4 +51,5 @@ The API never returns which slot was opened, decoy saves advance an in-memory se
 
 - **Shared header sequence number:** Slot 1 and Slot 2 share the plaintext header, so the on-disk `seq_num` reflects every *real* save. A decoy vault with a handful of entries sitting on a container at `seq_num` 400 suggests a second, busier slot exists.
 - **Multi-session coercion:** Decoy changes are RAM-only. An observer who adds an entry, locks, and unlocks again sees the entry (and the advanced sequence number) disappear. See item 3 above.
+- **Init timestamp on user-supplied decoys:** generated decoy entries get random creation and update times spread over the past two years, but user-supplied decoy entries entered at init all share the init timestamp.
 - **Randomized-pool decoys:** If the user does not supply their own decoy entries, the generated set is plausible but generic. An observer who knows the template pool can recognize it.

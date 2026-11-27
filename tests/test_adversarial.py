@@ -208,6 +208,20 @@ def test_duress_fixed_size_and_ephemeral_writes(tmp_path: Path):
     assert p_duress.read_bytes() == before_bytes
 
 
+def test_generated_decoys_have_varied_past_timestamps(tmp_path: Path):
+    """Generated decoy entries must not all share the vault-creation second."""
+    vm = VaultManager(tmp_path / "decoy_ts.vault", guard=RollbackGuard(local_anchor=MemoryAnchor()))
+    vm.create_vault("real_pw", duress_password="decoy_pw")
+    vm.lock()
+    assert vm.unlock("decoy_pw") == "decoy"
+
+    entries = vm.db.list_entries()
+    now = int(time.time())
+    assert len({e.created_at for e in entries}) > 1
+    assert all(e.created_at < now for e in entries)
+    assert all(e.updated_at >= e.created_at for e in entries)
+
+
 def test_duress_unlock_single_kdf_pass():
     """Real, decoy and wrong-password unlocks must have medians within 10% (one Argon2id pass each)."""
     engine = CryptoEngine()
