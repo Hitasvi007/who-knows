@@ -15,7 +15,7 @@ from backend.crypto.container import (
     UNSIGNED_CONTAINER_SIZE,
     VaultContainer,
 )
-from backend.crypto.engine import DecryptionError
+from backend.crypto.engine import CryptoEngine, DecryptionError
 from backend.crypto.pqc_share import HybridKeypair, HybridShareEngine
 from backend.crypto.rollback import (
     SIGNED_CONTAINER_SIZE,
@@ -24,6 +24,7 @@ from backend.crypto.rollback import (
     RollbackGuard,
     SignatureError,
 )
+from backend.crypto.timing import benchmark_unlock_timing
 from backend.storage.vault_manager import VaultManager
 
 
@@ -162,23 +163,11 @@ def test_duress_fixed_size_and_ephemeral_writes(tmp_path: Path):
 
 
 def test_duress_unlock_single_kdf_pass():
-    """Real and Decoy unlocks must both execute a single Argon2id pass (no 2x timing leak)."""
-    container = VaultContainer()
-    blob = container.build(
-        "real_pw", b"real_data", duress_password="decoy_pw", decoy_data=b"decoy_data"
-    )
-
-    t0 = time.perf_counter()
-    m1, _, _, _ = container.unlock("real_pw", blob)
-    t_real = time.perf_counter() - t0
-
-    t1 = time.perf_counter()
-    m2, _, _, _ = container.unlock("decoy_pw", blob)
-    t_decoy = time.perf_counter() - t1
-
-    assert m1 == "real" and m2 == "decoy"
-    # Decoy unlock should not take ~2x longer than Real unlock
-    assert t_decoy < (t_real * 1.8) + 0.05
+    """Real, decoy and wrong-password unlocks must have medians within 10% (one Argon2id pass each)."""
+    engine = CryptoEngine()
+    engine.memory_cost = 8192  # 8 MiB: big enough that OS jitter is small next to the KDF, still fast
+    result = benchmark_unlock_timing(n=30, container=VaultContainer(engine))
+    assert result["constant_time_pass"] is True, result
 
 
 # --- 4. Hybrid Post-Quantum Sharing (X25519 + ML-KEM-768) ---

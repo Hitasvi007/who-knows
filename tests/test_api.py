@@ -311,8 +311,9 @@ def test_tamper_lab_endpoints(client: TestClient):
     assert client.post("/api/tamper/signature").json()["caught"] is True
     assert client.post("/api/tamper/rollback").json()["caught"] is True
 
-    timing = client.post("/api/tamper/duress-timing").json()
-    assert timing["constant_time_pass"] is True
+    timing = client.post("/api/tamper/duress-timing", json={"trials": 10}).json()
+    assert timing["trials"] == 10 and len(timing["decoy"]["samples_ms"]) == 10
+    assert isinstance(timing["constant_time_pass"], bool)  # pass/fail itself is asserted in test_adversarial
 
 
 @pytest.mark.parametrize(
