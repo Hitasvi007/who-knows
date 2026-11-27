@@ -11,11 +11,23 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { api, ApiError } from "../api";
+import { bundleFingerprint } from "../utils/fingerprint";
+
+function Fingerprint({ value, label }: { value: string | null; label: string }) {
+  if (!value) return null;
+  return (
+    <p className="font-mono text-[11px] text-zinc-500">
+      {label}: <span className="text-gold">{value}</span>
+    </p>
+  );
+}
 
 export function PqShare() {
   const [publicBundle, setPublicBundle] = useState("");
   const [bundleBytes, setBundleBytes] = useState(0);
   const [copied, setCopied] = useState<string | null>(null);
+  const [ownFp, setOwnFp] = useState<string | null>(null);
+  const [recipientFp, setRecipientFp] = useState<string | null>(null);
 
   // Encrypt state
   const [recipientBundle, setRecipientBundle] = useState("");
@@ -39,6 +51,14 @@ export function PqShare() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    bundleFingerprint(publicBundle).then(setOwnFp);
+  }, [publicBundle]);
+
+  useEffect(() => {
+    bundleFingerprint(recipientBundle).then(setRecipientFp);
+  }, [recipientBundle]);
 
   function copy(key: string, value: string) {
     if (!value) return;
@@ -138,6 +158,8 @@ export function PqShare() {
             Use Own Key
           </button>
         </div>
+        <Fingerprint value={ownFp} label="Your fingerprint" />
+        {ownFp && <p className="text-[11px] text-zinc-500">Compare this fingerprint with the other person over a separate channel (in person or by phone). The share format does not authenticate keys or senders.</p>}
       </section>
 
       {/* Split-Pane Encrypt / Decrypt */}
@@ -163,6 +185,12 @@ export function PqShare() {
               placeholder="Paste recipient's wk_pub_... bundle"
               className="w-full rounded-md border border-hairline bg-obsidian px-3 py-2 font-mono text-[11px] text-zinc-200 placeholder-zinc-600 focus:border-gold focus:outline-none"
             />
+            <Fingerprint value={recipientFp} label="Recipient fingerprint" />
+            {recipientFp && (
+              <p className="text-[11px] text-zinc-500">
+                Confirm this matches the fingerprint the recipient sees before sending.
+              </p>
+            )}
           </div>
 
           <div>
@@ -199,7 +227,7 @@ export function PqShare() {
               className="space-y-2 pt-2"
             >
               <div className="flex items-center justify-between">
-                <span className="font-mono text-[11px] text-gold">SIGNED PQ ENVELOPE</span>
+                <span className="font-mono text-[11px] text-gold">PQ ENVELOPE (UNSIGNED)</span>
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -252,7 +280,7 @@ export function PqShare() {
               rows={7}
               value={envelopeInput}
               onChange={(e) => setEnvelopeInput(e.target.value)}
-              placeholder='Paste JSON envelope {"kem_ct": "...", "x25519_epk": "...", ...}'
+              placeholder='Paste JSON envelope {"mlkem_ciphertext": "...", "ephemeral_x25519_pub": "...", ...}'
               className="w-full rounded-md border border-hairline bg-obsidian px-3 py-2 font-mono text-[11px] text-zinc-200 placeholder-zinc-600 focus:border-gold focus:outline-none"
             />
           </div>
@@ -282,7 +310,7 @@ export function PqShare() {
               <div className="flex items-center justify-between font-mono text-[11px]">
                 <span className="flex items-center gap-1.5 text-gold">
                   <ShieldCheck className="h-3.5 w-3.5" />
-                  VERIFIED PLAINTEXT
+                  DECRYPTED · SENDER NOT AUTHENTICATED
                 </span>
                 <button
                   type="button"

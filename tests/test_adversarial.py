@@ -184,7 +184,7 @@ def test_duress_unlock_single_kdf_pass():
 # --- 4. Hybrid Post-Quantum Sharing (X25519 + ML-KEM-768) ---
 
 
-def test_hybrid_pqc_mitm_tampering_rejected():
+def test_hybrid_pqc_ciphertext_tampering_rejected():
     """Tampering with either the ML-KEM ciphertext or ephemeral X25519 key breaks HKDF + AAD."""
     bob = HybridKeypair.generate()
     engine = HybridShareEngine()

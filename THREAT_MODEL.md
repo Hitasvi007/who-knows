@@ -38,6 +38,8 @@ A single-user vault encrypted with 256-bit `XChaCha20-Poly1305` already retains 
 2. **Python Memory Hygiene:** Decrypted credentials live in an in-memory SQLite database so no plaintext is written to disk. However, Python strings are immutable, the garbage collector copies objects, and `mlock`/guaranteed zeroization is not enforced. **This project does not claim forensic RAM immunity.**
 3. **Active Multi-Session Coercion:** Duress mode is strictly ephemeral (changes in the decoy session are not persisted to disk so Slot 1 and `seq_num` remain untouched). An active coercer who adds a decoy entry, locks the vault, and unlocks it again will observe that the entry disappeared—exposing the duress password.
 4. **Same-Disk Trust Anchor:** In default local development, `.vault.pub` and the rollback anchor reside on the same filesystem as `.vault`. In a real deployment, the verification key and rollback state must be pinned in an OS keystore or hardware-backed storage.
+5. **PQ Share Has No Key or Sender Authentication:** The hybrid KEM provides confidentiality only. Nothing binds a `wk_pub_` bundle to a person, and envelopes are not signed, so a man-in-the-middle can swap the recipient's public bundle (and read the share), and anyone holding the recipient's public bundle can forge an envelope to them. The UI shows a short SHA-256 fingerprint of both bundles; users must compare it out of band (in person or by phone) before sharing.
+
 ### Known Duress-Mode Tells
 
 The API never returns which slot was opened, decoy saves advance an in-memory sequence counter, and decoy entries are either user-supplied at init or drawn at random from a template pool (so no single fixed decoy fingerprint exists in the public source). The following tells remain:
