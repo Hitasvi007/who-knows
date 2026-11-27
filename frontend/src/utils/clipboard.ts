@@ -44,9 +44,9 @@ function retryPendingClear() {
 }
 
 if (typeof document !== "undefined") {
+  // No clear on "hidden": that fires as soon as the user switches tabs to paste.
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") clearClipboard();
-    else retryPendingClear();
+    if (document.visibilityState === "visible") retryPendingClear();
   });
   window.addEventListener("focus", retryPendingClear);
 }
