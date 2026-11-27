@@ -56,9 +56,27 @@ vm = VaultManager(VAULT_PATH)
 pqc_engine = HybridShareEngine()
 
 
+def weak_kdf_warning() -> Optional[str]:
+    engine = vm.container.engine
+    if not engine.weak_params:
+        return None
+    bar = "!" * 72
+    return "\n".join([
+        "",
+        bar,
+        f"  WARNING: weak Argon2id parameters active ({engine.memory_cost // 1024} MiB, t={engine.iterations}).",
+        "  TESTING=1 is set. Vaults created now are cheap to brute-force. Unset TESTING.",
+        bar,
+        "",
+    ])
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     if not os.environ.get("PYTEST_CURRENT_TEST"):
+        warning = weak_kdf_warning()
+        if warning:
+            print(warning, flush=True)
         print(f"\n  whoknows: open http://127.0.0.1:8000/?launch={LAUNCH_CODE}  (one-time link)\n", flush=True)
         if DEV_MODE:
             # Dev only: sync the session token to Vite's gitignored .env.local (exposed to local processes)
