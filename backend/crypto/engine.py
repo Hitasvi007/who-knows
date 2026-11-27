@@ -20,6 +20,7 @@ class CryptoEngine:
     SALT_SIZE = 16     # 128-bit Argon2id salt
     NONCE_SIZE = 24    # 192-bit XChaCha20 nonce (eliminates 2^32 birthday bound)
     TAG_SIZE = 16      # 128-bit Poly1305 MAC
+    PRODUCTION_MEMORY_COST = 65536  # 64 MiB
 
     def __init__(self) -> None:
         if os.environ.get("TESTING") == "1":
@@ -30,8 +31,12 @@ class CryptoEngine:
         else:
             # RFC 9106 / OWASP memory-constrained production baseline
             self.iterations = 3
-            self.memory_cost = 65536  # 64 MiB
+            self.memory_cost = self.PRODUCTION_MEMORY_COST
             self.lanes = 4
+
+    @property
+    def weak_params(self) -> bool:
+        return self.memory_cost < self.PRODUCTION_MEMORY_COST or self.iterations < 3
 
     def generate_salt(self) -> bytes:
         return os.urandom(self.SALT_SIZE)
