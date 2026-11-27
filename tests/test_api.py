@@ -228,6 +228,7 @@ def test_rollback_error_returns_409(client: TestClient):
 
 
 def test_pqc_share_roundtrip(client: TestClient):
+    client.post("/api/vault/init", json={"real_password": "real_pw"})
     pub = client.get("/api/pqc/public-key").json()
     assert pub["size_bytes"] == 1216
     assert pub["public_bundle"].startswith("wk_pub_")
@@ -242,6 +243,54 @@ def test_pqc_share_roundtrip(client: TestClient):
     dec = client.post("/api/pqc/decrypt", json={"envelope": envelope})
     assert dec.status_code == 200
     assert dec.json()["plaintext"] == "db_root_secret"
+
+
+def test_pqc_keypair_survives_daemon_restart(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    client.post("/api/vault/init", json={"real_password": "real_pw"})
+    bundle = client.get("/api/pqc/public-key").json()["public_bundle"]
+    envelope = client.post(
+        "/api/pqc/encrypt", json={"recipient_bundle": bundle, "payload": "after_restart"}
+    ).json()["envelope"]
+
+    # Simulate a daemon restart: fresh VaultManager over the same file and anchor
+    old = api_main.vm
+    monkeypatch.setattr(api_main, "vm", VaultManager(old.vault_path, vault_id=old.vault_id, guard=old.guard))
+    assert client.post("/api/vault/unlock", json={"password": "real_pw"}).status_code == 200
+    assert client.get("/api/pqc/public-key").json()["public_bundle"] == bundle
+    assert client.post("/api/pqc/decrypt", json={"envelope": envelope}).json()["plaintext"] == "after_restart"
+
+
+def test_decoy_has_its_own_pqc_keypair(client: TestClient):
+    client.post("/api/vault/init", json={"real_password": "real_pw", "duress_password": "decoy_pw"})
+    real_bundle = client.get("/api/pqc/public-key").json()["public_bundle"]
+    client.post("/api/vault/lock")
+    client.post("/api/vault/unlock", json={"password": "decoy_pw"})
+    decoy_bundle = client.get("/api/pqc/public-key").json()["public_bundle"]
+    assert decoy_bundle != real_bundle
+    client.post("/api/vault/lock")
+    client.post("/api/vault/unlock", json={"password": "decoy_pw"})
+    assert client.get("/api/pqc/public-key").json()["public_bundle"] == decoy_bundle
+
+
+def test_pqc_endpoints_require_unlocked_vault(client: TestClient):
+    assert client.get("/api/pqc/public-key").status_code == 423
+    assert client.post("/api/pqc/encrypt", json={"recipient_bundle": "x", "payload": "y"}).status_code == 423
+    assert client.post("/api/pqc/decrypt", json={"envelope": {}}).status_code == 423
+
+
+def test_malformed_pqc_envelopes_return_401(client: TestClient):
+    client.post("/api/vault/init", json={"real_password": "real_pw"})
+    bundle = client.get("/api/pqc/public-key").json()["public_bundle"]
+    good = client.post("/api/pqc/encrypt", json={"recipient_bundle": bundle, "payload": "p"}).json()["envelope"]
+
+    assert client.post("/api/pqc/encrypt", json={"recipient_bundle": "wk_pub_AAAA", "payload": "p"}).status_code == 400
+
+    truncated = dict(good, mlkem_ciphertext=good["mlkem_ciphertext"][:40])
+    bad_b64 = dict(good, nonce="!!!not-base64!!!")
+    missing = {k: v for k, v in good.items() if k != "ciphertext"}
+    for env in (truncated, bad_b64, missing):
+        resp = client.post("/api/pqc/decrypt", json={"envelope": env})
+        assert resp.status_code == 401, (env, resp.text)
 
 
 # --- 5. Interactive Tamper Lab Endpoints ---

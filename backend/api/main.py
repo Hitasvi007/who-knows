@@ -21,7 +21,7 @@ from backend.crypto.container import (
     VaultHeader,
 )
 from backend.crypto.engine import DecryptionError
-from backend.crypto.pqc_share import HybridKeypair, HybridShareEngine
+from backend.crypto.pqc_share import HybridShareEngine
 from backend.crypto.rollback import (
     MLDSA65_SIG_SIZE,
     SIGNED_CONTAINER_SIZE,
@@ -45,7 +45,6 @@ ALLOWED_HOSTS = {
 
 vm = VaultManager(VAULT_PATH)
 pqc_engine = HybridShareEngine()
-session_pqc_keypair = HybridKeypair.generate()
 
 
 @asynccontextmanager
@@ -301,23 +300,30 @@ def delete_entry(entry_id: str, manager: VaultManager = Depends(require_unlocked
 
 
 @app.get("/api/pqc/public-key")
-def get_pqc_public_key() -> Dict[str, Any]:
+def get_pqc_public_key(manager: VaultManager = Depends(require_unlocked)) -> Dict[str, Any]:
+    kp = manager.pqc_keypair
     return {
-        "public_bundle": session_pqc_keypair.export_public_bundle(),
-        "size_bytes": len(session_pqc_keypair.public_bundle_bytes()),
+        "public_bundle": kp.export_public_bundle(),
+        "size_bytes": len(kp.public_bundle_bytes()),
     }
 
 
 @app.post("/api/pqc/encrypt")
-def pqc_encrypt(req: PQCEncryptRequest) -> Dict[str, Any]:
-    envelope = pqc_engine.encrypt_share(req.recipient_bundle, req.payload.encode("utf-8"))
+def pqc_encrypt(req: PQCEncryptRequest, _: VaultManager = Depends(require_unlocked)) -> Dict[str, Any]:
+    try:
+        envelope = pqc_engine.encrypt_share(req.recipient_bundle, req.payload.encode("utf-8"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid recipient public key: {exc}") from exc
     return {"envelope": envelope}
 
 
 @app.post("/api/pqc/decrypt")
-def pqc_decrypt(req: PQCDecryptRequest) -> Dict[str, str]:
-    plaintext = pqc_engine.decrypt_share(session_pqc_keypair, req.envelope)
-    return {"plaintext": plaintext.decode("utf-8")}
+def pqc_decrypt(req: PQCDecryptRequest, manager: VaultManager = Depends(require_unlocked)) -> Dict[str, str]:
+    plaintext = pqc_engine.decrypt_share(manager.pqc_keypair, req.envelope)
+    try:
+        return {"plaintext": plaintext.decode("utf-8")}
+    except UnicodeDecodeError as exc:
+        raise DecryptionError("Shared payload is not valid UTF-8.") from exc
 
 
 # --- 4. Interactive Tamper Lab (/api/tamper) ---

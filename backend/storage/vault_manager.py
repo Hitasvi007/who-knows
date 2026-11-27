@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives.asymmetric.mldsa import (
 )
 
 from backend.crypto.container import VaultContainer
+from backend.crypto.pqc_share import HybridKeypair
 from backend.crypto.rollback import RollbackGuard
 from backend.storage.db import VaultDB
 
@@ -82,6 +83,7 @@ class VaultManager:
         self.guard = guard or RollbackGuard()
         # Serializes unlock/save/lock; API callers also hold it across "mutate DB + save".
         self.mutex = threading.RLock()
+        self.pqc_keypair: Optional[HybridKeypair] = None
 
         # Active in-memory session state
         self.db: Optional[VaultDB] = None
@@ -126,12 +128,15 @@ class VaultManager:
             format=serialization.PublicFormat.Raw,
         )
         real_db.set_meta("mldsa_priv", sk_bytes)
+        real_db.set_meta("pqc_keypair", HybridKeypair.generate().to_bytes())
 
         decoy_bytes: Optional[bytes] = None
         if duress_password is not None:
             decoy_db = VaultDB()
             for entry in decoy_entries if decoy_entries is not None else _random_decoy_entries():
                 decoy_db.add_entry(**entry)
+            # Separate decoy identity so the two modes cannot be linked by public key
+            decoy_db.set_meta("pqc_keypair", HybridKeypair.generate().to_bytes())
             decoy_bytes = decoy_db.export_bytes()
             decoy_db.close()
 
@@ -160,6 +165,7 @@ class VaultManager:
         self._password = real_password
         self._seq_num = 1
         self._state_hash = state_hash
+        self.pqc_keypair = HybridKeypair.from_bytes(real_db.get_meta("pqc_keypair"))
 
     @_synchronized
     def unlock(self, password: str) -> Literal["real", "decoy"]:
@@ -184,6 +190,14 @@ class VaultManager:
         self._dek = dek
         self._seq_num = header.seq_num
         self._state_hash = state_hash
+
+        kp_bytes = self.db.get_meta("pqc_keypair")
+        if kp_bytes is None:  # vault created before PQ keypairs were persisted
+            kp_bytes = HybridKeypair.generate().to_bytes()
+            self.db.set_meta("pqc_keypair", kp_bytes)
+            if mode == "real":
+                self.save()
+        self.pqc_keypair = HybridKeypair.from_bytes(kp_bytes)
         return mode
 
     @_synchronized
@@ -236,5 +250,6 @@ class VaultManager:
         self.mode = None
         self._password = None
         self._dek = None
+        self.pqc_keypair = None
         self._seq_num = 0
         self._state_hash = b"\x00" * 32

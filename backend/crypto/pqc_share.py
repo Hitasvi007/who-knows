@@ -19,13 +19,15 @@ from backend.crypto.engine import CryptoEngine, DecryptionError
 
 X25519_PUB_SIZE = 32
 MLKEM768_PUB_SIZE = 1184
+X25519_PRIV_SIZE = 32
+MLKEM768_SEED_SIZE = 64
 PUB_PREFIX = "wk_pub_"
 HKDF_INFO = b"whoknows-hybrid-x25519-mlkem768-v1"
 
 
 @dataclass
 class HybridKeypair:
-    """User's long-term hybrid asymmetric identity stored inside the encrypted vault."""
+    """User's long-term hybrid asymmetric identity, persisted in vault meta under `pqc_keypair`."""
 
     x25519_private: X25519PrivateKey
     mlkem_private: MLKEM768PrivateKey
@@ -35,6 +37,24 @@ class HybridKeypair:
         return cls(
             x25519_private=X25519PrivateKey.generate(),
             mlkem_private=MLKEM768PrivateKey.generate(),
+        )
+
+    def to_bytes(self) -> bytes:
+        """96 bytes: X25519 raw private key (32B) || ML-KEM-768 private seed (64B)."""
+        x_priv = self.x25519_private.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        return x_priv + self.mlkem_private.private_bytes_raw()
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> "HybridKeypair":
+        if len(data) != X25519_PRIV_SIZE + MLKEM768_SEED_SIZE:
+            raise ValueError("Malformed hybrid keypair bytes.")
+        return cls(
+            x25519_private=X25519PrivateKey.from_private_bytes(data[:X25519_PRIV_SIZE]),
+            mlkem_private=MLKEM768PrivateKey.from_seed_bytes(data[X25519_PRIV_SIZE:]),
         )
 
     def public_bundle_bytes(self) -> bytes:
@@ -126,13 +146,18 @@ class HybridShareEngine:
 
     def decrypt_share(self, recipient_keypair: HybridKeypair, envelope: Dict[str, str]) -> bytes:
         """Decapsulates the hybrid key and decrypts the one-time credential payload."""
+        # Any malformed envelope (missing keys, bad base64, wrong key/ciphertext lengths,
+        # non-string values) must surface as DecryptionError, never as an unhandled crash.
         try:
-            eph_x_pub_bytes = base64.b64decode(envelope["ephemeral_x25519_pub"])
-            mlkem_ct = base64.b64decode(envelope["mlkem_ciphertext"])
-            nonce = base64.b64decode(envelope["nonce"])
-            ciphertext = base64.b64decode(envelope["ciphertext"])
-        except (KeyError, ValueError) as exc:
+            return self._decrypt_share(recipient_keypair, envelope)
+        except (KeyError, ValueError, TypeError) as exc:
             raise DecryptionError("Malformed hybrid share envelope.") from exc
+
+    def _decrypt_share(self, recipient_keypair: HybridKeypair, envelope: Dict[str, str]) -> bytes:
+        eph_x_pub_bytes = base64.b64decode(envelope["ephemeral_x25519_pub"])
+        mlkem_ct = base64.b64decode(envelope["mlkem_ciphertext"])
+        nonce = base64.b64decode(envelope["nonce"])
+        ciphertext = base64.b64decode(envelope["ciphertext"])
 
         recip_x_bytes = recipient_keypair.x25519_private.public_key().public_bytes(
             encoding=serialization.Encoding.Raw,
