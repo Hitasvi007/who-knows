@@ -3,7 +3,6 @@ import json
 from dataclasses import dataclass
 from typing import Dict, Optional, Protocol, Tuple
 
-import httpx
 import keyring
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.mldsa import (
@@ -51,30 +50,6 @@ class KeyringAnchor:
     def set_latest(self, vault_id: str, state: AnchorState) -> None:
         payload = json.dumps({"seq_num": state.seq_num, "state_hash": state.state_hash})
         keyring.set_password(KEYRING_SERVICE, vault_id, payload)
-
-
-class RemoteAnchorClient:
-    """Optional external append-only transparency log client (defeats local OS/disk rollback)."""
-
-    def __init__(self, base_url: str, timeout: float = 3.0) -> None:
-        self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
-
-    def get_latest(self, vault_id: str) -> Optional[AnchorState]:
-        resp = httpx.get(f"{self.base_url}/anchor/{vault_id}", timeout=self.timeout)
-        if resp.status_code == 404:
-            return None
-        resp.raise_for_status()
-        data = resp.json()
-        return AnchorState(seq_num=data["seq_num"], state_hash=data["state_hash"])
-
-    def set_latest(self, vault_id: str, state: AnchorState) -> None:
-        resp = httpx.post(
-            f"{self.base_url}/anchor/{vault_id}",
-            json={"seq_num": state.seq_num, "state_hash": state.state_hash},
-            timeout=self.timeout,
-        )
-        resp.raise_for_status()
 
 
 class MemoryAnchor:
