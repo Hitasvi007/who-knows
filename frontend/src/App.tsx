@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api, type VaultStatus } from "./api";
 import { LockScreen } from "./components/LockScreen";
 import { VaultWorkspace, type NavTab } from "./components/VaultWorkspace";
+import { TamperLab } from "./components/TamperLab";
+import { PqShare } from "./components/PqShare";
 
 export default function App() {
   const [status, setStatus] = useState<VaultStatus | null>(null);
@@ -49,6 +51,7 @@ export default function App() {
         setUnlockMs(undefined);
         await refreshStatus();
       }}
+      renderSecondaryTab={(tab) => (tab === "tamper" ? <TamperLab /> : <PqShare />)}
     />
   );
 }
