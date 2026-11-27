@@ -55,7 +55,7 @@ class VaultHeader:
 
 
 class VaultContainer:
-    """Packs and unpacks the fixed-size Dual-Slot binary container with IND-CPA Duress Mode."""
+    """Packs and unpacks the fixed-size Dual-Slot binary container with length-hiding Duress Mode."""
 
     def __init__(self, engine: Optional[CryptoEngine] = None) -> None:
         self.engine = engine or CryptoEngine()
@@ -110,7 +110,7 @@ class VaultContainer:
         r_dek = real_dek or self.engine.generate_dek()
         slot_1 = self._pack_slot(real_kek, r_dek, real_data, header_bytes)
 
-        # Slot 2: Decoy Vault (or IND-CPA indistinguishable random noise)
+        # Slot 2: Decoy Vault (or random noise, indistinguishable from an encrypted slot)
         if duress_password is not None and decoy_data is not None:
             if duress_password == real_password:
                 raise ValueError("Duress password must differ from the master password.")

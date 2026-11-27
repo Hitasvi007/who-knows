@@ -140,7 +140,7 @@ export function TamperLab() {
         </div>
       )}
 
-      {/* Container Binary Map & IND-CPA Entropy */}
+      {/* Container Binary Map & Slot Entropy */}
       <section className="rounded-lg border border-hairline bg-surface p-5 space-y-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
