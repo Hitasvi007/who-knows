@@ -30,7 +30,7 @@ from backend.crypto.rollback import (
     RollbackGuard,
     SignatureError,
 )
-from backend.storage.vault_manager import VaultLockedError, VaultManager
+from backend.storage.vault_manager import VaultExistsError, VaultLockedError, VaultManager
 
 
 VAULT_PATH = Path(os.environ.get("WHOKNOWS_VAULT_PATH", "whoknows.vault"))
@@ -113,6 +113,11 @@ app.add_middleware(
 @app.exception_handler(VaultLockedError)
 async def locked_handler(_: Request, exc: VaultLockedError):
     return JSONResponse(status_code=423, content={"detail": str(exc)})
+
+
+@app.exception_handler(VaultExistsError)
+async def exists_handler(_: Request, exc: VaultExistsError):
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
 
 
 @app.exception_handler(DecryptionError)

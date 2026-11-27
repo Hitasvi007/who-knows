@@ -20,6 +20,10 @@ class VaultLockedError(Exception):
     """Raised when an operation requires an unlocked vault session."""
 
 
+class VaultExistsError(Exception):
+    """Raised when create_vault would overwrite an existing vault or key file."""
+
+
 def _synchronized(fn):
     @functools.wraps(fn)
     def wrapper(self, *args, **kwargs):
@@ -74,6 +78,8 @@ class VaultManager:
         duress_password: Optional[str] = None,
     ) -> None:
         """Initializes a new signed 68,909-byte .vault file and anchors seq 1."""
+        if self.vault_path.exists() or self.pub_path.exists():
+            raise VaultExistsError("A vault already exists at this path; refusing to overwrite it.")
         real_db = VaultDB()
         sk, pk = self.guard.generate_signing_keypair()
 

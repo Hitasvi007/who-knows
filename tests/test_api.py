@@ -60,6 +60,17 @@ def test_vault_init_lock_unlock_and_wrong_password(client: TestClient):
     assert real_resp.json()["mode"] == "real"
 
 
+def test_vault_init_twice_returns_409_and_keeps_vault(client: TestClient):
+    assert client.post("/api/vault/init", json={"real_password": "real_pw"}).status_code == 200
+    before = api_main.vm.vault_path.read_bytes()
+    before_pub = api_main.vm.pub_path.read_bytes()
+
+    resp = client.post("/api/vault/init", json={"real_password": "other_pw"})
+    assert resp.status_code == 409
+    assert api_main.vm.vault_path.read_bytes() == before
+    assert api_main.vm.pub_path.read_bytes() == before_pub
+
+
 # --- 2. Credential CRUD & Duress Mode ---
 
 
