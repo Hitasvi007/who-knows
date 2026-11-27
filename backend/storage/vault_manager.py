@@ -1,4 +1,7 @@
+import functools
 import os
+import secrets
+import threading
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -17,6 +20,15 @@ class VaultLockedError(Exception):
     """Raised when an operation requires an unlocked vault session."""
 
 
+def _synchronized(fn):
+    @functools.wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        with self.mutex:
+            return fn(self, *args, **kwargs)
+
+    return wrapper
+
+
 class VaultManager:
     """Orchestrates VaultDB, VaultContainer, RollbackGuard, and atomic .vault disk I/O."""
 
@@ -32,6 +44,8 @@ class VaultManager:
         self.vault_id = vault_id or self.vault_path.name
         self.container = container or VaultContainer()
         self.guard = guard or RollbackGuard()
+        # Serializes unlock/save/lock; API callers also hold it across "mutate DB + save".
+        self.mutex = threading.RLock()
 
         # Active in-memory session state
         self.db: Optional[VaultDB] = None
@@ -46,13 +60,14 @@ class VaultManager:
         return self.db is not None
 
     def _atomic_write(self, path: Path, data: bytes) -> None:
-        tmp_path = Path(f"{path}.tmp")
+        tmp_path = Path(f"{path}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
         with open(tmp_path, "wb") as f:
             f.write(data)
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp_path, path)
 
+    @_synchronized
     def create_vault(
         self,
         real_password: str,
@@ -111,6 +126,7 @@ class VaultManager:
         self._seq_num = 1
         self._state_hash = state_hash
 
+    @_synchronized
     def unlock(self, password: str) -> Literal["real", "decoy"]:
         """Verifies ML-DSA-65 signature + rollback anchor, then unlocks in constant KDF time."""
         if not self.vault_path.exists() or not self.pub_path.exists():
@@ -135,6 +151,7 @@ class VaultManager:
         self._state_hash = state_hash
         return mode
 
+    @_synchronized
     def save(self) -> int:
         """Increments seq_num, re-encrypts, signs with ML-DSA-65, and anchors the new state."""
         if not self.is_unlocked or self.db is None or self._password is None:
@@ -173,6 +190,7 @@ class VaultManager:
         self._state_hash = new_hash
         return next_seq
 
+    @_synchronized
     def lock(self) -> None:
         """Closes the in-memory SQLite DB and clears session secrets from RAM."""
         if self.db is not None:

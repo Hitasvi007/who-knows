@@ -125,6 +125,24 @@ def test_duress_mode_via_api_is_ephemeral(client: TestClient):
     assert add_resp.json()["seq_num"] == 1
 
 
+def test_concurrent_saves_do_not_fork_vault(client: TestClient):
+    from concurrent.futures import ThreadPoolExecutor
+
+    client.post("/api/vault/init", json={"real_password": "real_pw"})
+
+    def create(i: int) -> int:
+        return client.post("/api/entries", json={"title": f"Entry {i}", "password": "x"}).status_code
+
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        assert list(pool.map(create, range(10))) == [201] * 10
+
+    client.post("/api/vault/lock")
+    unlock = client.post("/api/vault/unlock", json={"password": "real_pw"})
+    assert unlock.status_code == 200, unlock.text
+    assert unlock.json()["seq_num"] == 11
+    assert len(client.get("/api/entries").json()) == 10
+
+
 # --- 3. Security Exception Mapping (403 Signature / 409 Rollback) ---
 
 

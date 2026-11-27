@@ -211,12 +211,13 @@ def vault_status() -> Dict[str, Any]:
 
 @app.post("/api/vault/init")
 def vault_init(req: VaultInitRequest) -> Dict[str, Any]:
-    vm.create_vault(req.real_password, duress_password=req.duress_password)
-    return {
-        "status": "created",
-        "seq_num": vm._seq_num,
-        "size_bytes": vm.vault_path.stat().st_size,
-    }
+    with vm.mutex:
+        vm.create_vault(req.real_password, duress_password=req.duress_password)
+        return {
+            "status": "created",
+            "seq_num": vm._seq_num,
+            "size_bytes": vm.vault_path.stat().st_size,
+        }
 
 
 @app.post("/api/vault/unlock")
@@ -243,20 +244,24 @@ def vault_lock() -> Dict[str, str]:
 
 @app.get("/api/entries")
 def list_entries(q: Optional[str] = None, manager: VaultManager = Depends(require_unlocked)) -> List[Dict[str, Any]]:
-    return [e.to_dict() for e in manager.db.list_entries(query=q)]
+    with manager.mutex:
+        require_unlocked()
+        return [e.to_dict() for e in manager.db.list_entries(query=q)]
 
 
 @app.post("/api/entries", status_code=201)
 def create_entry(req: EntryCreateRequest, manager: VaultManager = Depends(require_unlocked)) -> Dict[str, Any]:
-    entry = manager.db.add_entry(
-        title=req.title,
-        username=req.username,
-        password=req.password,
-        url=req.url,
-        totp_secret=req.totp_secret,
-        notes=req.notes,
-    )
-    seq_num = manager.save()
+    with manager.mutex:  # DB mutation + save must be atomic together
+        require_unlocked()
+        entry = manager.db.add_entry(
+            title=req.title,
+            username=req.username,
+            password=req.password,
+            url=req.url,
+            totp_secret=req.totp_secret,
+            notes=req.notes,
+        )
+        seq_num = manager.save()
     return {"entry": entry.to_dict(), "seq_num": seq_num}
 
 
@@ -266,19 +271,23 @@ def update_entry(
     req: EntryUpdateRequest,
     manager: VaultManager = Depends(require_unlocked),
 ) -> Dict[str, Any]:
-    updated = manager.db.update_entry(entry_id, **req.model_dump(exclude_unset=True))
-    if not updated:
-        raise HTTPException(status_code=404, detail="Entry not found.")
-    seq_num = manager.save()
+    with manager.mutex:
+        require_unlocked()
+        updated = manager.db.update_entry(entry_id, **req.model_dump(exclude_unset=True))
+        if not updated:
+            raise HTTPException(status_code=404, detail="Entry not found.")
+        seq_num = manager.save()
     return {"entry": updated.to_dict(), "seq_num": seq_num}
 
 
 @app.delete("/api/entries/{entry_id}")
 def delete_entry(entry_id: str, manager: VaultManager = Depends(require_unlocked)) -> Dict[str, Any]:
-    deleted = manager.db.delete_entry(entry_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Entry not found.")
-    seq_num = manager.save()
+    with manager.mutex:
+        require_unlocked()
+        deleted = manager.db.delete_entry(entry_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Entry not found.")
+        seq_num = manager.save()
     return {"deleted": True, "seq_num": seq_num}
 
 
