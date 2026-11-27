@@ -375,6 +375,24 @@ def test_lock_if_idle_keeps_active_session(client: TestClient):
     assert api_main.vm.is_unlocked
 
 
+@pytest.mark.parametrize("origin", ["http://127.0.0.1:3000", "http://localhost:5173", "null"])
+def test_foreign_origin_rejected_even_with_cookie(client: TestClient, origin: str):
+    client.post("/api/vault/init", json={"real_password": "real_pw"})
+    assert client.post("/api/vault/lock", headers={"Origin": origin}).status_code == 403
+    assert client.post("/api/tamper/duress-timing", headers={"Origin": origin}).status_code == 403
+    assert api_main.vm.is_unlocked
+
+
+def test_own_origin_and_no_origin_allowed(client: TestClient):
+    assert client.get("/api/vault/status", headers={"Origin": "http://127.0.0.1:8000"}).status_code == 200
+    assert client.get("/api/vault/status").status_code == 200
+
+
+def test_dev_origin_allowed_in_dev_mode(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(api_main, "DEV_MODE", True)
+    assert client.get("/api/vault/status", headers={"Origin": "http://127.0.0.1:5173"}).status_code == 200
+
+
 def test_dns_rebinding_rejected():
     raw_client = TestClient(app)
     res = raw_client.get(
