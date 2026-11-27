@@ -358,36 +358,57 @@ export function TamperLab() {
                 disabled={runningTiming}
                 className="rounded border border-gold/40 bg-gold-dim px-2.5 py-1 font-mono text-[11px] font-medium text-gold transition hover:bg-gold/20 disabled:opacity-50"
               >
-                {runningTiming ? "Measuring..." : "Run Probe"}
+                {runningTiming ? "Measuring 30 trials..." : "Run Probe"}
               </button>
             </div>
 
             {timing ? (
-              <div className="space-y-2.5 pt-1 font-mono text-[11px]">
-                {[
-                  { label: "Real Slot Unlock", ms: timing.real_ms },
-                  { label: "Decoy Slot Unlock", ms: timing.decoy_ms },
-                ].map(({ label, ms }) => {
-                  const maxMs = Math.max(timing.real_ms, timing.decoy_ms, 1);
-                  return (
+              <div className="space-y-3 pt-1 font-mono text-[11px]">
+                {(() => {
+                  const rows = [
+                    { label: "Real password", st: timing.real },
+                    { label: "Decoy password", st: timing.decoy },
+                    { label: "Wrong password", st: timing.wrong },
+                  ];
+                  const lo = Math.min(...rows.flatMap((r) => r.st.samples_ms));
+                  const hi = Math.max(...rows.flatMap((r) => r.st.samples_ms));
+                  const span = Math.max(hi - lo, 0.001);
+                  const pos = (ms: number) => `${((ms - lo) / span) * 100}%`;
+                  return rows.map(({ label, st }) => (
                     <div key={label} className="space-y-1">
                       <div className="flex justify-between text-zinc-400">
                         <span>{label}</span>
-                        <span className="text-zinc-200">{ms.toFixed(1)} ms</span>
+                        <span className="text-zinc-200">
+                          median {st.median_ms.toFixed(1)} ms · p10–p90 {st.p10_ms.toFixed(1)}–
+                          {st.p90_ms.toFixed(1)}
+                        </span>
                       </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-hairline">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${(ms / maxMs) * 100}%` }}
-                          transition={{ duration: 0.35 }}
-                          className="h-full bg-gold"
+                      {/* p10–p90 band, one dot per trial, median tick */}
+                      <div className="relative h-3 w-full rounded bg-hairline/60">
+                        <div
+                          className="absolute top-0 h-full rounded bg-gold/20"
+                          style={{ left: pos(st.p10_ms), width: `calc(${pos(st.p90_ms)} - ${pos(st.p10_ms)})` }}
+                        />
+                        {st.samples_ms.map((ms, k) => (
+                          <span
+                            key={k}
+                            className="absolute top-1 h-1 w-1 -translate-x-1/2 rounded-full bg-zinc-400"
+                            style={{ left: pos(ms) }}
+                          />
+                        ))}
+                        <span
+                          className="absolute top-0 h-full w-0.5 -translate-x-1/2 bg-gold"
+                          style={{ left: pos(st.median_ms) }}
                         />
                       </div>
                     </div>
-                  );
-                })}
+                  ));
+                })()}
                 <div className="flex items-center justify-between border-t border-hairline pt-2">
-                  <span className="text-zinc-500">RATIO: {timing.ratio.toFixed(3)}x</span>
+                  <span className="text-zinc-500">
+                    {timing.trials} trials · decoy/real {timing.decoy_vs_real_ratio.toFixed(3)}x ·
+                    wrong/real {timing.wrong_vs_real_ratio.toFixed(3)}x
+                  </span>
                   <span
                     className={
                       timing.constant_time_pass ? "text-gold" : "text-red-400"
@@ -399,7 +420,8 @@ export function TamperLab() {
               </div>
             ) : (
               <p className="font-mono text-[11px] text-zinc-500">
-                Compares real vs. decoy Argon2id + AEAD unlock latency to verify no timing oracle.
+                Times 30 alternating real, decoy and wrong-password unlocks of a synthetic container.
+                Passes when the medians are within 10% of each other.
               </p>
             )}
           </div>

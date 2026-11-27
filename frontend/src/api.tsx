@@ -69,10 +69,20 @@ export interface TamperAttackResult {
   error?: string;
 }
 
+export interface TimingStats {
+  median_ms: number;
+  p10_ms: number;
+  p90_ms: number;
+  samples_ms: number[];
+}
+
 export interface DuressTimingResult {
-  real_ms: number;
-  decoy_ms: number;
-  ratio: number;
+  trials: number;
+  real: TimingStats;
+  decoy: TimingStats;
+  wrong: TimingStats;
+  decoy_vs_real_ratio: number;
+  wrong_vs_real_ratio: number;
   constant_time_pass: boolean;
 }
 
