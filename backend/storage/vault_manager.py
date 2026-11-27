@@ -202,6 +202,9 @@ class VaultManager:
         # 2. Constant-time dual-slot unlock
         mode, _, dek, raw_data = self.container.unlock(password, unsigned)
 
+        # 3. Re-anchor: heals a save whose anchor write was interrupted (no-op when already equal)
+        self.guard.commit_state(self.vault_id, header.seq_num, state_hash)
+
         self.db = VaultDB.from_bytes(raw_data)
         self.mode = mode
         self._password = password
