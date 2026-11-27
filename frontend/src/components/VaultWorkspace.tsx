@@ -26,6 +26,7 @@ import {
   type GeneratorOptions,
 } from "../utils/password";
 import { PasswordStrengthMeter } from "./PasswordStrengthMeter";
+import { copySecret, setClipboardNotifier } from "../utils/clipboard";
 
 export type NavTab = "vault" | "pqc" | "tamper";
 
@@ -82,7 +83,6 @@ export function VaultWorkspace({
   const [toast, setToast] = useState<{ id: number; message: string } | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const clearClipTimer = useRef<number | null>(null);
 
   const passwordAnalysis = useMemo(() => analyzePassword(form.password, false), [form.password]);
 
@@ -105,6 +105,11 @@ export function VaultWorkspace({
   useEffect(() => {
     loadEntries(search || undefined);
   }, [search]);
+
+  useEffect(() => {
+    setClipboardNotifier(pushToast);
+    return () => setClipboardNotifier(() => {});
+  }, []);
 
   // Keyboard shortcuts: Ctrl+K (search), Alt+N (new), Alt+L (lock)
   useEffect(() => {
@@ -199,21 +204,18 @@ export function VaultWorkspace({
     pushToast(`Deleted · Re-signed SEQ #${res.seq_num}`);
   }
 
-  function copyValue(field: string, value: string, isSecret = false) {
+  async function copyValue(field: string, value: string, isSecret = false) {
     if (!value) return;
-    navigator.clipboard.writeText(value);
+    try {
+      if (isSecret) await copySecret(value);
+      else await navigator.clipboard.writeText(value);
+    } catch {
+      pushToast("Copy failed: clipboard not available");
+      return;
+    }
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 1500);
-
-    if (isSecret) {
-      pushToast("Password copied · clipboard clears in 30s");
-      if (clearClipTimer.current) window.clearTimeout(clearClipTimer.current);
-      clearClipTimer.current = window.setTimeout(() => {
-        navigator.clipboard.writeText("").catch(() => {});
-      }, 30000);
-    } else {
-      pushToast("Copied to clipboard");
-    }
+    pushToast(isSecret ? "Password copied · clipboard clears in 30s" : "Copied to clipboard");
   }
 
   function applyGeneratedPassword(pw: string) {
