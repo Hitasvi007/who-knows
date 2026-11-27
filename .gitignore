@@ -13,3 +13,4 @@ frontend/dist/
 Decisions.docx
 
 frontend/.env.local
+*.tsbuildinfo
