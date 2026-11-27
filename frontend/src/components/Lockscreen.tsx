@@ -90,7 +90,7 @@ export function LockScreen({ vaultExists, onUnlocked }: LockScreenProps) {
         <p className="mb-6 text-xs text-zinc-500">
           {vaultExists
             ? "Signature and rollback anchor are verified before key derivation."
-            : "Creates a fixed 68,909-byte IND-CPA container on disk."}
+            : "Creates a fixed 68,909-byte length-hiding container on disk."}
         </p>
 
         {error && (
@@ -148,7 +148,7 @@ export function LockScreen({ vaultExists, onUnlocked }: LockScreenProps) {
                   type="password"
                   value={duressPassword}
                   onChange={(e) => setDuressPassword(e.target.value)}
-                  placeholder="Opens plausible-deniability decoy slot"
+                  placeholder="Opens ephemeral RAM-only decoy slot"
                   className="w-full rounded-md border border-hairline bg-obsidian py-2 pr-3 pl-9 text-sm text-zinc-100 placeholder-zinc-600 focus:border-gold focus:outline-none"
                 />
               </div>
