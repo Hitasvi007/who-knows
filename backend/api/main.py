@@ -1,3 +1,4 @@
+import asyncio
 import secrets
 import math
 import os
@@ -43,6 +44,7 @@ LAUNCH_CODE: Optional[str] = secrets.token_urlsafe(24)
 SESSION_COOKIE = "wk_session"
 # Dev mode (Vite on :5173) accepts the X-Vault-Token header, which is compiled into the dev JS bundle.
 DEV_MODE = os.environ.get("WHOKNOWS_DEV") == "1"
+IDLE_LOCK_SECONDS = float(os.environ.get("WHOKNOWS_IDLE_LOCK_SECONDS", "300"))
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 ALLOWED_HOSTS = {
@@ -82,7 +84,14 @@ async def lifespan(_: FastAPI):
             # Dev only: sync the session token to Vite's gitignored .env.local (exposed to local processes)
             Path("frontend/.env.local").write_text(f"VITE_VAULT_TOKEN={SESSION_TOKEN}\n", encoding="utf-8")
             print("  whoknows: WHOKNOWS_DEV=1, the session token is exposed via the Vite dev server.\n", flush=True)
+    async def idle_watchdog():
+        while True:
+            await asyncio.sleep(15)
+            vm.lock_if_idle(IDLE_LOCK_SECONDS)
+
+    watchdog = asyncio.create_task(idle_watchdog())
     yield
+    watchdog.cancel()
     # Wipe in-memory SQLite DB and keys on server shutdown
     vm.lock()
 
@@ -120,6 +129,11 @@ async def localhost_security_middleware(request: Request, call_next):
                 status_code=401,
                 content={"detail": "Missing or invalid session. Open the launch URL printed by the daemon."},
             )
+        # Idle auto-lock: lock first if the session expired, then count this call as activity.
+        # Passive status checks do not keep the vault unlocked.
+        vm.lock_if_idle(IDLE_LOCK_SECONDS)
+        if request.url.path != "/api/vault/status":
+            vm.touch()
         return await call_next(request)
 
     # 3. One-time launch code -> session cookie, then strip the code from the URL
