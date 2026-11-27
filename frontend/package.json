@@ -12,6 +12,9 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@zxcvbn-ts/core": "4.2.0",
+    "@zxcvbn-ts/language-common": "4.2.0",
+    "@zxcvbn-ts/language-en": "4.1.2",
     "framer-motion": "^14.14.0",
     "lucide-react": "^1.81.0",
     "react": "^19.3.1",
